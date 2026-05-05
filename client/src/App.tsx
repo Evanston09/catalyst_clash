@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Konva from "konva";
 import {
-  BeakerIcon,
-  CircleDotDashedIcon,
-  FlaskConicalIcon,
+  EraserIcon,
+  LockIcon,
+  PlayIcon,
+  RotateCcwIcon,
+  SwordsIcon,
 } from "lucide-react";
 import {
+  Arc,
   Circle,
   Ellipse,
   Group,
@@ -18,14 +21,11 @@ import {
   Text,
 } from "react-konva";
 
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 
 import "./App.css";
-
-type GamePhase = "selecting" | "complex";
 
 type Molecule = {
   id: string;
@@ -34,13 +34,32 @@ type Molecule = {
   color: string;
 };
 
+type GameStatus = "idle" | "running" | "ended";
+
+type BlockingReason = "competitive" | "allosteric";
+
+type CompetitiveBlocker = {
+  id: string;
+  xRatio: number;
+  yRatio: number;
+};
+
+type InhibitionState = {
+  competitiveBlockers: CompetitiveBlocker[];
+  allostericActive: boolean;
+  allostericPrimed: boolean;
+  allostericHoldMs: number;
+};
+
 type GameState = {
-  phase: GamePhase;
+  status: GameStatus;
+  timeRemainingMs: number;
   productCount: number;
   round: number;
   correctSubstrateId: string;
-  boundSubstrateId: string | null;
   failedSubstrateId: string | null;
+  statusMessage: string;
+  inhibition: InhibitionState;
   molecules: Molecule[];
 };
 
@@ -51,6 +70,11 @@ type CanvasSize = {
 
 type MoleculePosition = {
   id: string;
+  x: number;
+  y: number;
+};
+
+type CompetitiveBlockerPosition = CompetitiveBlocker & {
   x: number;
   y: number;
 };
@@ -89,9 +113,14 @@ const defaultCanvasSize: CanvasSize = {
   height: 560,
 };
 
+const matchDurationMs = 60_000;
+const timerTickMs = 250;
+const competitiveBlockerCount = 10;
+const allostericHoldTargetMs = 2_000;
+
 function buildRound(round: number): Pick<
   GameState,
-  "correctSubstrateId" | "boundSubstrateId" | "failedSubstrateId" | "molecules"
+  "correctSubstrateId" | "failedSubstrateId" | "molecules"
 > {
   const correctIndex = (round - 1) % substrateCatalog.length;
   const selectedIndexes = [
@@ -115,7 +144,6 @@ function buildRound(round: number): Pick<
 
   return {
     correctSubstrateId: molecules[0].id,
-    boundSubstrateId: null,
     failedSubstrateId: null,
     molecules: shuffleByRound(molecules, round),
   };
@@ -139,10 +167,22 @@ function scoreForRound(value: string, round: number) {
 
 function createInitialState(): GameState {
   return {
-    phase: "selecting",
+    status: "idle",
+    timeRemainingMs: matchDurationMs,
     productCount: 0,
     round: 1,
+    statusMessage: "Press Start, then drag the correct substrate into the active site.",
+    inhibition: createEmptyInhibitionState(),
     ...buildRound(1),
+  };
+}
+
+function createEmptyInhibitionState(): InhibitionState {
+  return {
+    competitiveBlockers: [],
+    allostericActive: false,
+    allostericPrimed: false,
+    allostericHoldMs: 0,
   };
 }
 
@@ -152,23 +192,54 @@ function App() {
   const canvasSize = useElementSize(playfieldRef, defaultCanvasSize);
   const theme = useCanvasTheme();
 
-  const boundSubstrate = useMemo(
-    () =>
-      game.molecules.find((molecule) => molecule.id === game.boundSubstrateId) ??
-      null,
-    [game.boundSubstrateId, game.molecules],
-  );
-
-  const roundProgress = useMemo(() => {
-    const cycleRound = ((game.round - 1) % substrateCatalog.length) + 1;
-
-    return (cycleRound / substrateCatalog.length) * 100;
-  }, [game.round]);
+  const timerProgress = (game.timeRemainingMs / matchDurationMs) * 100;
+  const blockingReason = getBlockingReason(game.inhibition);
 
   const moleculePositions = useMemo(
     () => buildMoleculePositions(game.molecules, game.round, canvasSize),
     [canvasSize, game.molecules, game.round],
   );
+
+  const competitiveBlockerPositions = useMemo(
+    () =>
+      buildCompetitiveBlockerPositions(
+        game.inhibition.competitiveBlockers,
+        canvasSize,
+      ),
+    [canvasSize, game.inhibition.competitiveBlockers],
+  );
+
+  useEffect(() => {
+    if (game.status !== "running") {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      setGame((current) => {
+        if (current.status !== "running") {
+          return current;
+        }
+
+        const timeRemainingMs = Math.max(
+          0,
+          current.timeRemainingMs - timerTickMs,
+        );
+
+        if (timeRemainingMs > 0) {
+          return { ...current, timeRemainingMs };
+        }
+
+        return {
+          ...current,
+          status: "ended",
+          timeRemainingMs,
+          statusMessage: `Time. Final score: ${current.productCount} products.`,
+        };
+      });
+    }, timerTickMs);
+
+    return () => window.clearInterval(intervalId);
+  }, [game.status]);
 
   useEffect(() => {
     if (!game.failedSubstrateId) {
@@ -182,39 +253,155 @@ function App() {
     return () => window.clearTimeout(timeoutId);
   }, [game.failedSubstrateId]);
 
-  function tryBindSubstrate(substrateId: string, inActiveSite: boolean) {
-    setGame((current) => {
-      if (
-        current.phase !== "selecting" ||
-        !inActiveSite ||
-        substrateId !== current.correctSubstrateId
-      ) {
-        return { ...current, failedSubstrateId: substrateId };
-      }
-
-      return {
-        ...current,
-        phase: "complex",
-        boundSubstrateId: substrateId,
-        failedSubstrateId: null,
-      };
+  function startGame() {
+    setGame({
+      ...createInitialState(),
+      status: "running",
+      statusMessage: "Go. Make as many products as possible in 60 seconds.",
     });
   }
 
-  function catalyzeComplex() {
+  function resetGame() {
+    setGame(createInitialState());
+  }
+
+  function tryBindSubstrate(substrateId: string, inActiveSite: boolean) {
     setGame((current) => {
-      if (current.phase !== "complex") {
-        return current;
+      if (current.status !== "running") {
+        return {
+          ...current,
+          failedSubstrateId: substrateId,
+          statusMessage: "Press Start before binding substrates.",
+        };
+      }
+
+      const currentBlockingReason = getBlockingReason(current.inhibition);
+
+      if (currentBlockingReason === "competitive") {
+        return {
+          ...current,
+          failedSubstrateId: substrateId,
+          statusMessage: "Competitive blockers are occupying the field.",
+        };
+      }
+
+      if (!inActiveSite || substrateId !== current.correctSubstrateId) {
+        return {
+          ...current,
+          failedSubstrateId: substrateId,
+          statusMessage: !inActiveSite
+            ? "Drop a substrate into the active site."
+            : "That substrate does not fit this enzyme.",
+        };
+      }
+
+      if (
+        current.inhibition.allostericPrimed ||
+        current.inhibition.allostericActive
+      ) {
+        return {
+          ...current,
+          statusMessage:
+            "Substrate binds, but an allosteric blocker prevents product formation.",
+          inhibition: {
+            ...current.inhibition,
+            allostericActive: true,
+            allostericPrimed: false,
+          },
+        };
       }
 
       const nextRound = current.round + 1;
 
       return {
         ...current,
-        phase: "selecting",
         productCount: current.productCount + 1,
         round: nextRound,
+        statusMessage: "Product formed. New substrate set loaded.",
         ...buildRound(nextRound),
+      };
+    });
+  }
+
+  function triggerCompetitive() {
+    setGame((current) => ({
+      ...current,
+      statusMessage: "Competitive inhibition: click all 10 blockers to clear.",
+      inhibition: {
+        ...current.inhibition,
+        competitiveBlockers: buildCompetitiveBlockers(current.round),
+      },
+    }));
+  }
+
+  function triggerAllosteric() {
+    setGame((current) => ({
+      ...current,
+      statusMessage:
+        "Noncompetitive demo armed: bind the correct substrate to reveal the allosteric blocker.",
+      inhibition: {
+        ...current.inhibition,
+        allostericActive: false,
+        allostericPrimed: true,
+        allostericHoldMs: current.inhibition.allostericActive
+          ? current.inhibition.allostericHoldMs
+          : 0,
+      },
+    }));
+  }
+
+  function clearBlockers() {
+    setGame((current) => ({
+      ...current,
+      statusMessage: "All blockers cleared.",
+      inhibition: createEmptyInhibitionState(),
+    }));
+  }
+
+  function clearCompetitiveBlocker(blockerId: string) {
+    setGame((current) => {
+      const competitiveBlockers =
+        current.inhibition.competitiveBlockers.filter(
+          (blocker) => blocker.id !== blockerId,
+        );
+
+      return {
+        ...current,
+        statusMessage:
+          competitiveBlockers.length === 0
+            ? "Competitive blockers cleared."
+            : `${competitiveBlockers.length} competitive blockers left.`,
+        inhibition: {
+          ...current.inhibition,
+          competitiveBlockers,
+        },
+      };
+    });
+  }
+
+  function advanceAllostericHold(deltaMs: number) {
+    setGame((current) => {
+      if (!current.inhibition.allostericActive) {
+        return current;
+      }
+
+      const allostericHoldMs = Math.min(
+        allostericHoldTargetMs,
+        current.inhibition.allostericHoldMs + deltaMs,
+      );
+      const allostericActive = allostericHoldMs < allostericHoldTargetMs;
+
+      return {
+        ...current,
+        statusMessage: allostericActive
+          ? "Holding allosteric lock."
+          : "Allosteric inhibition cleared.",
+        inhibition: {
+          ...current.inhibition,
+          allostericActive,
+          allostericPrimed: false,
+          allostericHoldMs,
+        },
       };
     });
   }
@@ -222,86 +409,92 @@ function App() {
   return (
     <main className="game-shell">
       <section className="game-stage" aria-label="Enzyme reaction game">
+        <div className="game-hud">
+          <div className="hud-primary">
+            <div className="hud-title">
+              <h1>Inhibition debug run</h1>
+              <p>{game.statusMessage}</p>
+            </div>
+            <div className="hud-stats">
+              <StatusBadge label="Time" value={formatTime(game.timeRemainingMs)} />
+              <StatusBadge label="Products" value={game.productCount} />
+              {blockingReason ? (
+                <Badge variant="secondary" className="h-auto px-3 py-1.5">
+                  {blockingReason === "competitive"
+                    ? `${game.inhibition.competitiveBlockers.length} competitors`
+                    : "Allosteric blocker"}
+                </Badge>
+              ) : game.inhibition.allostericPrimed ? (
+                <Badge variant="outline" className="h-auto px-3 py-1.5">
+                  Noncompetitive armed
+                </Badge>
+              ) : null}
+            </div>
+          </div>
+          <Progress value={timerProgress} aria-label="Match timer" />
+          <div className="debug-toolbar" aria-label="Debug controls">
+            <Button
+              type="button"
+              size="sm"
+              onClick={game.status === "running" ? resetGame : startGame}
+            >
+              {game.status === "running" ? (
+                <RotateCcwIcon data-icon="inline-start" />
+              ) : (
+                <PlayIcon data-icon="inline-start" />
+              )}
+              {game.status === "running" ? "Reset" : "Start"}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={game.status !== "running"}
+              onClick={triggerCompetitive}
+            >
+              <SwordsIcon data-icon="inline-start" />
+              Competitive
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={game.status !== "running"}
+              onClick={triggerAllosteric}
+            >
+              <LockIcon data-icon="inline-start" />
+              Noncompetitive
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              disabled={!blockingReason && !game.inhibition.allostericPrimed}
+              onClick={clearBlockers}
+            >
+              <EraserIcon data-icon="inline-start" />
+              Clear blockers
+            </Button>
+          </div>
+        </div>
+
         <div ref={playfieldRef} className="reaction-canvas">
           <ReactionStage
-            boundSubstrate={boundSubstrate}
+            allostericHoldProgress={
+              game.inhibition.allostericHoldMs / allostericHoldTargetMs
+            }
+            allostericInhibited={game.inhibition.allostericActive}
+            activeSiteBlocked={blockingReason === "competitive"}
+            competitiveBlockers={competitiveBlockerPositions}
+            draggable={game.status === "running"}
             game={game}
             moleculePositions={moleculePositions}
             size={canvasSize}
             theme={theme}
+            onAdvanceAllostericHold={advanceAllostericHold}
+            onClearCompetitiveBlocker={clearCompetitiveBlocker}
             onTryBind={tryBindSubstrate}
           />
-        </div>
-
-        <div className="game-hud">
-          <div className="flex min-w-0 flex-col gap-3">
-            <div className="flex flex-col gap-3">
-              <Badge variant="secondary" className="w-fit">
-                Catalyst Clash
-              </Badge>
-              <div className="flex flex-col gap-2">
-                <h1 className="text-2xl font-semibold tracking-normal text-foreground md:text-4xl">
-                  Find the right substrate in the field.
-                </h1>
-                <p className="max-w-2xl text-sm text-muted-foreground">
-                  Drag scattered molecules into the active site. Decoys are
-                  mixed into the same canvas as the enzyme.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex min-w-52 flex-col gap-3">
-            <div className="flex flex-wrap justify-start gap-2 md:justify-end">
-              <StatusBadge label="Products" value={game.productCount} />
-              <StatusBadge label="Round" value={game.round} />
-            </div>
-            <div className="flex flex-col gap-2">
-              <Badge variant={game.phase === "complex" ? "default" : "outline"}>
-                {game.phase === "complex"
-                  ? "Complex formed"
-                  : "Selecting substrate"}
-              </Badge>
-              <div className="flex items-center justify-between gap-3 text-xs font-medium text-muted-foreground">
-                <span>Catalog cycle</span>
-                <span>
-                  {((game.round - 1) % substrateCatalog.length) + 1}/
-                  {substrateCatalog.length}
-                </span>
-              </div>
-              <Progress value={roundProgress} aria-label="Round cycle" />
-            </div>
-          </div>
-        </div>
-
-        <div className="game-action-bar">
-          <Alert className="min-w-0 flex-1" aria-live="polite">
-            {game.phase === "complex" ? (
-              <FlaskConicalIcon />
-            ) : (
-              <CircleDotDashedIcon />
-            )}
-            <AlertTitle>
-              {game.phase === "complex"
-                ? "Ready to catalyze"
-                : "Active site is open"}
-            </AlertTitle>
-            <AlertDescription>
-              {game.phase === "complex"
-                ? `${boundSubstrate?.label ?? "Substrate"} is bound to the enzyme.`
-                : "Search the canvas and drop one substrate into the active site."}
-            </AlertDescription>
-          </Alert>
-          <Button
-            className="shrink-0"
-            type="button"
-            size="lg"
-            disabled={game.phase !== "complex"}
-            onClick={catalyzeComplex}
-          >
-            <BeakerIcon data-icon="inline-start" />
-            Catalyze
-          </Button>
         </div>
       </section>
     </main>
@@ -309,16 +502,28 @@ function App() {
 }
 
 function ReactionStage({
-  boundSubstrate,
+  activeSiteBlocked,
+  allostericHoldProgress,
+  allostericInhibited,
+  competitiveBlockers,
+  draggable,
   game,
   moleculePositions,
+  onAdvanceAllostericHold,
+  onClearCompetitiveBlocker,
   onTryBind,
   size,
   theme,
 }: {
-  boundSubstrate: Molecule | null;
+  activeSiteBlocked: boolean;
+  allostericHoldProgress: number;
+  allostericInhibited: boolean;
+  competitiveBlockers: CompetitiveBlockerPosition[];
+  draggable: boolean;
   game: GameState;
   moleculePositions: MoleculePosition[];
+  onAdvanceAllostericHold: (deltaMs: number) => void;
+  onClearCompetitiveBlocker: (blockerId: string) => void;
   onTryBind: (substrateId: string, inActiveSite: boolean) => void;
   size: CanvasSize;
   theme: CanvasTheme;
@@ -328,6 +533,7 @@ function ReactionStage({
   );
   const targetedSubstrateIdRef = useRef<string | null>(null);
   const activeSite = getActiveSiteBounds(size);
+  const allostericSite = getAllostericSite(size);
 
   function updateTargetedSubstrateId(substrateId: string | null) {
     if (targetedSubstrateIdRef.current === substrateId) {
@@ -347,7 +553,11 @@ function ReactionStage({
 
     updateTargetedSubstrateId(null);
 
-    if (inActiveSite && molecule.id === game.correctSubstrateId) {
+    if (
+      inActiveSite &&
+      molecule.id === game.correctSubstrateId &&
+      !activeSiteBlocked
+    ) {
       new Konva.Tween({
         node: event.target,
         duration: 0.18,
@@ -393,22 +603,8 @@ function ReactionStage({
             theme.muted,
           ]}
         />
-        <Rect
-          x={28}
-          y={28}
-          width={size.width - 56}
-          height={size.height - 56}
-          cornerRadius={16}
-          stroke={theme.border}
-          dash={[8, 8]}
-          opacity={0.62}
-        />
         <CanvasEffects round={game.round} size={size} theme={theme} />
-        <EnzymeShape
-          activeSite={activeSite}
-          size={size}
-          theme={theme}
-        />
+        <EnzymeShape activeSite={activeSite} size={size} theme={theme} />
       </Layer>
       <Layer>
         <ActiveSiteTargetOverlay
@@ -416,22 +612,7 @@ function ReactionStage({
           theme={theme}
           visible={targetedSubstrateId !== null}
         />
-        {boundSubstrate ? (
-          <CanvasMolecule
-            compact
-            draggable={false}
-            failed={false}
-            molecule={boundSubstrate}
-            theme={theme}
-            x={activeSite.x}
-            y={activeSite.y}
-          />
-        ) : null}
         {game.molecules.map((molecule) => {
-          if (molecule.id === game.boundSubstrateId) {
-            return null;
-          }
-
           const position = moleculePositions.find(
             (moleculePosition) => moleculePosition.id === molecule.id,
           );
@@ -443,7 +624,7 @@ function ReactionStage({
           return (
             <CanvasMolecule
               key={molecule.id}
-              draggable={game.phase === "selecting"}
+              draggable={draggable}
               failed={game.failedSubstrateId === molecule.id}
               molecule={molecule}
               theme={theme}
@@ -455,6 +636,27 @@ function ReactionStage({
             />
           );
         })}
+        <ActiveSiteBlockedOverlay
+          activeSite={activeSite}
+          theme={theme}
+          visible={activeSiteBlocked}
+        />
+        {competitiveBlockers.map((blocker) => (
+          <CompetitiveBlockerNode
+            key={blocker.id}
+            blocker={blocker}
+            theme={theme}
+            onClear={() => onClearCompetitiveBlocker(blocker.id)}
+          />
+        ))}
+        {allostericInhibited ? (
+          <AllostericLock
+            onAdvanceHold={onAdvanceAllostericHold}
+            progress={allostericHoldProgress}
+            site={allostericSite}
+            theme={theme}
+          />
+        ) : null}
       </Layer>
     </Stage>
   );
@@ -573,6 +775,222 @@ function ActiveSiteTargetOverlay({
         innerRadius={Math.max(activeSite.radiusX, activeSite.radiusY) + 8}
         outerRadius={Math.max(activeSite.radiusX, activeSite.radiusY) + 16}
         fill={theme.isDark ? "rgba(255,255,255,0.14)" : "rgba(255,255,255,0.22)"}
+      />
+    </Group>
+  );
+}
+
+function ActiveSiteBlockedOverlay({
+  activeSite,
+  theme,
+  visible,
+}: {
+  activeSite: ActiveSiteBounds;
+  theme: CanvasTheme;
+  visible: boolean;
+}) {
+  if (!visible) {
+    return null;
+  }
+
+  const xRadius = activeSite.radiusX + 12;
+  const yRadius = activeSite.radiusY + 10;
+
+  return (
+    <Group listening={false}>
+      <Ellipse
+        x={activeSite.x}
+        y={activeSite.y}
+        radiusX={xRadius}
+        radiusY={yRadius}
+        fill={
+          theme.isDark ? "rgba(248,113,113,0.2)" : "rgba(220,38,38,0.14)"
+        }
+        stroke={theme.destructive}
+        strokeWidth={3}
+      />
+      <Line
+        points={[
+          activeSite.x - xRadius * 0.62,
+          activeSite.y - yRadius * 0.62,
+          activeSite.x + xRadius * 0.62,
+          activeSite.y + yRadius * 0.62,
+        ]}
+        stroke={theme.destructive}
+        strokeWidth={7}
+        lineCap="round"
+      />
+      <Line
+        points={[
+          activeSite.x + xRadius * 0.62,
+          activeSite.y - yRadius * 0.62,
+          activeSite.x - xRadius * 0.62,
+          activeSite.y + yRadius * 0.62,
+        ]}
+        stroke={theme.destructive}
+        strokeWidth={7}
+        lineCap="round"
+      />
+    </Group>
+  );
+}
+
+function CompetitiveBlockerNode({
+  blocker,
+  onClear,
+  theme,
+}: {
+  blocker: CompetitiveBlockerPosition;
+  onClear: () => void;
+  theme: CanvasTheme;
+}) {
+  return (
+    <Group
+      x={blocker.x}
+      y={blocker.y}
+      onClick={onClear}
+      onTap={onClear}
+      onMouseEnter={(event) => {
+        const stage = event.target.getStage();
+
+        if (stage) {
+          stage.container().style.cursor = "pointer";
+        }
+      }}
+      onMouseLeave={(event) => {
+        const stage = event.target.getStage();
+
+        if (stage) {
+          stage.container().style.cursor = "default";
+        }
+      }}
+    >
+      <Circle
+        radius={24}
+        fill={theme.isDark ? "#f59f00" : "#ffb703"}
+        stroke={theme.foreground}
+        strokeWidth={2}
+        opacity={0.92}
+      />
+      <Line
+        points={[-12, -12, 12, 12]}
+        stroke={theme.destructive}
+        strokeWidth={5}
+        lineCap="round"
+      />
+      <Line
+        points={[12, -12, -12, 12]}
+        stroke={theme.destructive}
+        strokeWidth={5}
+        lineCap="round"
+      />
+      <Text
+        x={-42}
+        y={30}
+        width={84}
+        align="center"
+        text="compete"
+        fill={theme.foreground}
+        fontFamily="Figtree Variable, sans-serif"
+        fontSize={12}
+        fontStyle="800"
+      />
+    </Group>
+  );
+}
+
+function AllostericLock({
+  onAdvanceHold,
+  progress,
+  site,
+  theme,
+}: {
+  onAdvanceHold: (deltaMs: number) => void;
+  progress: number;
+  site: { x: number; y: number };
+  theme: CanvasTheme;
+}) {
+  const [holding, setHolding] = useState(false);
+  const clampedProgress = clamp(progress, 0, 1);
+
+  useEffect(() => {
+    if (!holding) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      onAdvanceHold(50);
+    }, 50);
+
+    return () => window.clearInterval(intervalId);
+  }, [holding, onAdvanceHold]);
+
+  return (
+    <Group
+      x={site.x}
+      y={site.y}
+      onMouseDown={() => setHolding(true)}
+      onMouseUp={() => setHolding(false)}
+      onTouchEnd={() => setHolding(false)}
+      onTouchStart={() => setHolding(true)}
+      onMouseEnter={(event) => {
+        const stage = event.target.getStage();
+
+        if (stage) {
+          stage.container().style.cursor = "pointer";
+        }
+      }}
+      onMouseLeave={(event) => {
+        setHolding(false);
+
+        const stage = event.target.getStage();
+
+        if (stage) {
+          stage.container().style.cursor = "default";
+        }
+      }}
+    >
+      <Circle
+        radius={42}
+        fill={theme.isDark ? "rgba(248,113,113,0.28)" : "rgba(220,38,38,0.16)"}
+        stroke={theme.destructive}
+        strokeWidth={3}
+        shadowColor={theme.destructive}
+        shadowBlur={holding ? 24 : 12}
+        shadowOpacity={holding ? 0.34 : 0.18}
+      />
+      <Arc
+        angle={360 * clampedProgress}
+        innerRadius={45}
+        outerRadius={51}
+        fill={theme.destructive}
+        rotation={-90}
+      />
+      <Rect
+        x={-13}
+        y={-1}
+        width={26}
+        height={20}
+        cornerRadius={6}
+        fill={theme.destructive}
+      />
+      <Ring
+        x={0}
+        y={-12}
+        innerRadius={10}
+        outerRadius={14}
+        fill={theme.destructive}
+      />
+      <Text
+        x={-36}
+        y={28}
+        width={72}
+        align="center"
+        text="hold"
+        fill={theme.foreground}
+        fontFamily="Figtree Variable, sans-serif"
+        fontSize={13}
+        fontStyle="800"
       />
     </Group>
   );
@@ -771,7 +1189,13 @@ function CanvasMolecule({
   );
 }
 
-function StatusBadge({ label, value }: { label: string; value: number }) {
+function StatusBadge({
+  label,
+  value,
+}: {
+  label: string;
+  value: number | string;
+}) {
   return (
     <Badge variant="outline" className="h-auto gap-2 px-3 py-1.5">
       <span className="text-muted-foreground">{label}</span>
@@ -796,7 +1220,7 @@ function useElementSize(
     function updateSize() {
       setSize({
         width: Math.max(320, Math.round(element?.clientWidth ?? fallback.width)),
-        height: Math.max(420, Math.round(element?.clientHeight ?? fallback.height)),
+        height: Math.max(260, Math.round(element?.clientHeight ?? fallback.height)),
       });
     }
 
@@ -916,6 +1340,59 @@ function canvasColor(
   }
 
   return value;
+}
+
+function getBlockingReason(inhibition: InhibitionState): BlockingReason | null {
+  if (inhibition.competitiveBlockers.length > 0) {
+    return "competitive";
+  }
+
+  if (inhibition.allostericActive) {
+    return "allosteric";
+  }
+
+  return null;
+}
+
+function buildCompetitiveBlockers(round: number) {
+  return Array.from({ length: competitiveBlockerCount }, (_, index) => ({
+    id: `round-${round}-competitive-${index}`,
+    xRatio: seededFraction(`round-${round}-competitive-${index}-x`, round),
+    yRatio: seededFraction(`round-${round}-competitive-${index}-y`, round),
+  }));
+}
+
+function buildCompetitiveBlockerPositions(
+  blockers: CompetitiveBlocker[],
+  size: CanvasSize,
+): CompetitiveBlockerPosition[] {
+  const margin = 62;
+
+  return blockers.map((blocker) => ({
+    ...blocker,
+    x: margin + (size.width - margin * 2) * blocker.xRatio,
+    y: margin + (size.height - margin * 2) * blocker.yRatio,
+  }));
+}
+
+function getAllostericSite(size: CanvasSize) {
+  const enzymeX = size.width * 0.52;
+  const enzymeY = size.height * 0.52;
+  const radiusX = clamp(size.width * 0.2, 145, 230);
+  const radiusY = clamp(size.height * 0.24, 110, 165);
+
+  return {
+    x: enzymeX - radiusX * 0.64,
+    y: enzymeY + radiusY * 0.5,
+  };
+}
+
+function formatTime(timeRemainingMs: number) {
+  const totalSeconds = Math.ceil(timeRemainingMs / 1_000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }
 
 function buildMoleculePositions(
