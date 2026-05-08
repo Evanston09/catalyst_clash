@@ -12,12 +12,12 @@ import {
   Circle,
   Ellipse,
   Group,
+  Image as KonvaImage,
   Layer,
   Line,
   Rect,
   Ring,
   Stage,
-  Star,
   Text,
 } from "react-konva";
 
@@ -31,7 +31,15 @@ type Molecule = {
   id: string;
   label: string;
   role: "correct" | "decoy";
-  color: string;
+  setId: string;
+  imageSrc: string;
+};
+
+type EnzymePair = {
+  setId: string;
+  label: string;
+  enzymeSrc: string;
+  substrateSrc: string;
 };
 
 type GameStatus = "idle" | "running" | "ended";
@@ -56,6 +64,7 @@ type GameState = {
   timeRemainingMs: number;
   productCount: number;
   round: number;
+  enzymePair: EnzymePair;
   correctSubstrateId: string;
   failedSubstrateId: string | null;
   statusMessage: string;
@@ -72,6 +81,7 @@ type MoleculePosition = {
   id: string;
   x: number;
   y: number;
+  rotation: number;
 };
 
 type CompetitiveBlockerPosition = CompetitiveBlocker & {
@@ -84,6 +94,8 @@ type ActiveSiteBounds = {
   y: number;
   radiusX: number;
   radiusY: number;
+  imageSize: number;
+  rotation: number;
 };
 
 type CanvasTheme = {
@@ -99,14 +111,7 @@ type CanvasTheme = {
   isDark: boolean;
 };
 
-const substrateCatalog = [
-  { label: "Lactose", color: "#39a0ed" },
-  { label: "Sucrose", color: "#f59f00" },
-  { label: "Maltose", color: "#2fb344" },
-  { label: "Cellulose", color: "#e64980" },
-  { label: "Starch", color: "#845ef7" },
-  { label: "Peptide", color: "#15aabf" },
-];
+const enzymePairs = loadEnzymePairs();
 
 const defaultCanvasSize: CanvasSize = {
   width: 960,
@@ -118,31 +123,84 @@ const timerTickMs = 250;
 const competitiveBlockerCount = 10;
 const allostericHoldTargetMs = 2_000;
 
+function loadEnzymePairs() {
+  const enzymeSources = import.meta.glob<string>(
+    "./assets/enzymes/set_*/enzyme.png",
+    {
+      eager: true,
+      import: "default",
+      query: "?url",
+    },
+  );
+  const substrateSources = import.meta.glob<string>(
+    "./assets/enzymes/set_*/substrate.png",
+    {
+      eager: true,
+      import: "default",
+      query: "?url",
+    },
+  );
+
+  const pairs = Object.entries(enzymeSources)
+    .map(([enzymePath, enzymeSrc]) => {
+      const setId = enzymePath.match(/set_(\d+)\/enzyme\.png$/)?.[1];
+
+      if (!setId) {
+        return null;
+      }
+
+      const substrateSrc = substrateSources[
+        `./assets/enzymes/set_${setId}/substrate.png`
+      ];
+
+      if (!substrateSrc) {
+        return null;
+      }
+
+      return {
+        setId,
+        label: `Set ${setId}`,
+        enzymeSrc,
+        substrateSrc,
+      } satisfies EnzymePair;
+    })
+    .filter((pair): pair is EnzymePair => pair !== null)
+    .sort((a, b) => Number(a.setId) - Number(b.setId));
+
+  if (pairs.length === 0) {
+    throw new Error("No enzyme pairs found in src/assets/enzymes.");
+  }
+
+  return pairs;
+}
+
 function buildRound(round: number): Pick<
   GameState,
-  "correctSubstrateId" | "failedSubstrateId" | "molecules"
+  "correctSubstrateId" | "enzymePair" | "failedSubstrateId" | "molecules"
 > {
-  const correctIndex = (round - 1) % substrateCatalog.length;
+  const correctIndex = (round - 1) % enzymePairs.length;
   const selectedIndexes = [
     correctIndex,
-    (correctIndex + 2) % substrateCatalog.length,
-    (correctIndex + 3) % substrateCatalog.length,
-    (correctIndex + 5) % substrateCatalog.length,
+    (correctIndex + 17) % enzymePairs.length,
+    (correctIndex + 43) % enzymePairs.length,
+    (correctIndex + 71) % enzymePairs.length,
   ];
 
   const molecules = selectedIndexes.map((catalogIndex, slot) => {
-    const substrate = substrateCatalog[catalogIndex];
-    const id = `round-${round}-substrate-${catalogIndex}`;
+    const pair = enzymePairs[catalogIndex];
+    const id = `round-${round}-substrate-${pair.setId}`;
 
     return {
       id,
-      label: substrate.label,
+      label: pair.label,
       role: slot === 0 ? "correct" : "decoy",
-      color: substrate.color,
+      setId: pair.setId,
+      imageSrc: pair.substrateSrc,
     } satisfies Molecule;
   });
 
   return {
+    enzymePair: enzymePairs[correctIndex],
     correctSubstrateId: molecules[0].id,
     failedSubstrateId: null,
     molecules: shuffleByRound(molecules, round),
@@ -338,14 +396,12 @@ function App() {
     setGame((current) => ({
       ...current,
       statusMessage:
-        "Noncompetitive demo armed: bind the correct substrate to reveal the allosteric blocker.",
+        "Noncompetitive inhibition: hold the allosteric blocker to clear.",
       inhibition: {
         ...current.inhibition,
-        allostericActive: false,
-        allostericPrimed: true,
-        allostericHoldMs: current.inhibition.allostericActive
-          ? current.inhibition.allostericHoldMs
-          : 0,
+        allostericActive: true,
+        allostericPrimed: false,
+        allostericHoldMs: 0,
       },
     }));
   }
@@ -532,8 +588,8 @@ function ReactionStage({
     null,
   );
   const targetedSubstrateIdRef = useRef<string | null>(null);
-  const activeSite = getActiveSiteBounds(size);
-  const allostericSite = getAllostericSite(size);
+  const activeSite = getActiveSiteBounds(size, game.round);
+  const allostericSite = getAllostericSite(activeSite);
 
   function updateTargetedSubstrateId(substrateId: string | null) {
     if (targetedSubstrateIdRef.current === substrateId) {
@@ -564,8 +620,9 @@ function ReactionStage({
         easing: Konva.Easings.EaseOut,
         x: activeSite.x,
         y: activeSite.y,
-        scaleX: 0.82,
-        scaleY: 0.82,
+        rotation: activeSite.rotation,
+        scaleX: 1,
+        scaleY: 1,
         onFinish: () => onTryBind(molecule.id, true),
       }).play();
 
@@ -594,19 +651,16 @@ function ReactionStage({
           width={size.width}
           height={size.height}
           cornerRadius={0}
-          fillLinearGradientStartPoint={{ x: 0, y: 0 }}
-          fillLinearGradientEndPoint={{ x: size.width, y: size.height }}
-          fillLinearGradientColorStops={[
-            "0",
-            theme.background,
-            "1",
-            theme.muted,
-          ]}
+          fill={theme.background}
         />
-        <CanvasEffects round={game.round} size={size} theme={theme} />
-        <EnzymeShape activeSite={activeSite} size={size} theme={theme} />
+        <EnzymeImage activeSite={activeSite} pair={game.enzymePair} theme={theme} />
       </Layer>
       <Layer>
+        <CanvasScoreCounter
+          productCount={game.productCount}
+          status={game.status}
+          theme={theme}
+        />
         <ActiveSiteTargetOverlay
           activeSite={activeSite}
           theme={theme}
@@ -626,7 +680,9 @@ function ReactionStage({
               key={molecule.id}
               draggable={draggable}
               failed={game.failedSubstrateId === molecule.id}
+              imageSize={activeSite.imageSize}
               molecule={molecule}
+              rotation={position.rotation}
               theme={theme}
               x={position.x}
               y={position.y}
@@ -662,87 +718,39 @@ function ReactionStage({
   );
 }
 
-function EnzymeShape({
+function EnzymeImage({
   activeSite,
-  size,
+  pair,
   theme,
 }: {
   activeSite: ActiveSiteBounds;
-  size: CanvasSize;
+  pair: EnzymePair;
   theme: CanvasTheme;
 }) {
-  const enzymeX = size.width * 0.52;
-  const enzymeY = size.height * 0.52;
-  const radiusX = clamp(size.width * 0.2, 145, 230);
-  const radiusY = clamp(size.height * 0.24, 110, 165);
+  const image = useCanvasImage(pair.enzymeSrc);
 
   return (
-    <Group>
-      <Ellipse
-        x={enzymeX}
-        y={enzymeY}
-        radiusX={radiusX}
-        radiusY={radiusY}
-        fillLinearGradientStartPoint={{ x: enzymeX - radiusX, y: enzymeY - radiusY }}
-        fillLinearGradientEndPoint={{ x: enzymeX + radiusX, y: enzymeY + radiusY }}
-        fillLinearGradientColorStops={[
-          "0",
-          theme.isDark ? "#89d9b5" : "#85d5ae",
-          "0.62",
-          theme.primary,
-          "1",
-          theme.isDark ? "#17483f" : "#1f625a",
-        ]}
-        shadowColor={theme.foreground}
-        shadowBlur={34}
-        shadowOpacity={theme.isDark ? 0.34 : 0.18}
-        shadowOffsetY={18}
-      />
-      <Circle
-        x={enzymeX - radiusX * 0.34}
-        y={enzymeY - radiusY * 0.32}
-        radius={radiusY * 0.13}
-        fill={theme.primaryForeground}
-        opacity={0.85}
-      />
-      <Circle
-        x={enzymeX + radiusX * 0.32}
-        y={enzymeY + radiusY * 0.28}
-        radius={radiusY * 0.17}
-        fill={theme.primary}
-        opacity={0.34}
-      />
-      <Text
-        x={enzymeX - 48}
-        y={enzymeY - 10}
-        width={96}
-        align="center"
-        text="Enzyme"
-        fill={theme.primaryForeground}
-        fontFamily="Figtree Variable, sans-serif"
-        fontSize={18}
-        fontStyle="800"
-      />
-      <Ellipse
-        x={activeSite.x}
-        y={activeSite.y}
-        radiusX={activeSite.radiusX}
-        radiusY={activeSite.radiusY}
-        fill={theme.isDark ? "rgba(4,18,22,0.48)" : "rgba(14,58,67,0.28)"}
-        stroke={theme.primaryForeground}
-        strokeWidth={3}
-      />
-      <Text
-        x={activeSite.x - activeSite.radiusX}
-        y={activeSite.y - 7}
-        width={activeSite.radiusX * 2}
-        align="center"
-        text="Active Site"
-        fill={theme.primaryForeground}
-        fontFamily="Figtree Variable, sans-serif"
-        fontSize={12}
-        fontStyle="800"
-      />
+    <Group
+      x={activeSite.x}
+      y={activeSite.y}
+      listening={false}
+      rotation={activeSite.rotation}
+    >
+      {image ? (
+        <KonvaImage
+          image={image}
+          x={-(activeSite.imageSize / 2)}
+          y={-(activeSite.imageSize / 2)}
+          width={activeSite.imageSize}
+          height={activeSite.imageSize}
+        />
+      ) : (
+        <Circle
+          radius={activeSite.imageSize / 2}
+          fill={theme.primary}
+          opacity={0.28}
+        />
+      )}
     </Group>
   );
 }
@@ -951,7 +959,7 @@ function AllostericLock({
       }}
     >
       <Circle
-        radius={42}
+        radius={38}
         fill={theme.isDark ? "rgba(248,113,113,0.28)" : "rgba(220,38,38,0.16)"}
         stroke={theme.destructive}
         strokeWidth={3}
@@ -961,25 +969,22 @@ function AllostericLock({
       />
       <Arc
         angle={360 * clampedProgress}
-        innerRadius={45}
-        outerRadius={51}
+        innerRadius={41}
+        outerRadius={47}
         fill={theme.destructive}
         rotation={-90}
       />
-      <Rect
-        x={-13}
-        y={-1}
-        width={26}
-        height={20}
-        cornerRadius={6}
-        fill={theme.destructive}
+      <Line
+        points={[-15, -15, 15, 15]}
+        stroke={theme.destructive}
+        strokeWidth={7}
+        lineCap="round"
       />
-      <Ring
-        x={0}
-        y={-12}
-        innerRadius={10}
-        outerRadius={14}
-        fill={theme.destructive}
+      <Line
+        points={[15, -15, -15, 15]}
+        stroke={theme.destructive}
+        strokeWidth={7}
+        lineCap="round"
       />
       <Text
         x={-36}
@@ -996,121 +1001,85 @@ function AllostericLock({
   );
 }
 
-function CanvasEffects({
-  round,
-  size,
+function CanvasScoreCounter({
+  productCount,
+  status,
   theme,
 }: {
-  round: number;
-  size: CanvasSize;
+  productCount: number;
+  status: GameStatus;
   theme: CanvasTheme;
 }) {
-  const particles = useMemo(() => {
-    return Array.from({ length: 14 }, (_, index) => ({
-      id: `particle-${index}`,
-      x: randomInRange(`particle-${index}-x`, round, 36, size.width - 36),
-      y: randomInRange(`particle-${index}-y`, round, 36, size.height - 36),
-      radius: randomInRange(`particle-${index}-r`, round, 4, 10),
-      rotation: randomInRange(`particle-${index}-rot`, round, 0, 180),
-      star: index % 5 === 0,
-    }));
-  }, [round, size]);
+  const label = status === "ended" ? "FINAL SCORE" : "SCORE";
 
   return (
     <Group listening={false}>
-      <Line
-        points={[
-          size.width * 0.18,
-          size.height * 0.22,
-          size.width * 0.35,
-          size.height * 0.18,
-          size.width * 0.56,
-          size.height * 0.26,
-        ]}
-        stroke={theme.border}
-        strokeWidth={2}
-        dash={[6, 10]}
-        opacity={0.7}
-        tension={0.35}
+      <Text
+        x={24}
+        y={22}
+        text={label}
+        fill={theme.mutedForeground}
+        fontFamily="Figtree Variable, sans-serif"
+        fontSize={18}
+        fontStyle="800"
       />
-      <Line
-        points={[
-          size.width * 0.2,
-          size.height * 0.76,
-          size.width * 0.42,
-          size.height * 0.82,
-          size.width * 0.74,
-          size.height * 0.72,
-        ]}
-        stroke={theme.border}
-        strokeWidth={2}
-        dash={[6, 10]}
-        opacity={0.7}
-        tension={0.35}
+      <Text
+        x={24}
+        y={44}
+        text={productCount.toString()}
+        fill={theme.foreground}
+        fontFamily="Figtree Variable, sans-serif"
+        fontSize={58}
+        fontStyle="900"
       />
-      {particles.map((particle) =>
-        particle.star ? (
-          <Star
-            key={particle.id}
-            x={particle.x}
-            y={particle.y}
-            numPoints={5}
-            innerRadius={particle.radius * 0.45}
-            outerRadius={particle.radius}
-            fill={theme.primary}
-            opacity={theme.isDark ? 0.28 : 0.38}
-            rotation={particle.rotation}
-          />
-        ) : (
-          <Ring
-            key={particle.id}
-            x={particle.x}
-            y={particle.y}
-            innerRadius={particle.radius * 0.55}
-            outerRadius={particle.radius}
-            fill={theme.primary}
-            opacity={theme.isDark ? 0.2 : 0.3}
-          />
-        ),
-      )}
     </Group>
   );
 }
 
 function CanvasMolecule({
   canvasSize,
-  compact = false,
   draggable,
   failed,
+  imageSize,
   molecule,
   onDragEnd,
   onDragMove,
+  rotation,
   theme,
   x,
   y,
 }: {
   canvasSize?: CanvasSize;
-  compact?: boolean;
   draggable: boolean;
   failed: boolean;
+  imageSize: number;
   molecule: Molecule;
   onDragEnd?: (event: Konva.KonvaEventObject<DragEvent>) => void;
   onDragMove?: (event: Konva.KonvaEventObject<DragEvent>) => void;
+  rotation: number;
   theme: CanvasTheme;
   x: number;
   y: number;
 }) {
-  const spriteSize = compact ? 48 : 58;
-  const labelWidth = 96;
+  const image = useCanvasImage(molecule.imageSrc);
 
   return (
     <Group
       x={x}
       y={y}
+      rotation={rotation}
       draggable={draggable}
       dragBoundFunc={(position) => ({
-        x: clamp(position.x, 54, (canvasSize?.width ?? defaultCanvasSize.width) - 54),
-        y: clamp(position.y, 54, (canvasSize?.height ?? defaultCanvasSize.height) - 54),
+        x: clamp(
+          position.x,
+          imageSize / 2,
+          (canvasSize?.width ?? defaultCanvasSize.width) - imageSize / 2,
+        ),
+        y: clamp(
+          position.y,
+          imageSize / 2,
+          (canvasSize?.height ?? defaultCanvasSize.height) - imageSize / 2,
+        ),
       })}
       onDragEnd={onDragEnd}
       onDragMove={onDragMove}
@@ -1135,55 +1104,24 @@ function CanvasMolecule({
           stage.container().style.cursor = "grabbing";
         }
       }}
-      opacity={draggable || compact ? 1 : 0.58}
+      opacity={draggable ? 1 : 0.58}
       scaleX={failed ? 1.08 : 1}
       scaleY={failed ? 1.08 : 1}
     >
-      <Circle
-        x={-spriteSize * 0.16}
-        y={-spriteSize * 0.12}
-        radius={spriteSize * 0.28}
-        fill={molecule.color}
-        stroke={theme.card}
-        strokeWidth={3}
-        shadowColor={failed ? theme.foreground : undefined}
-        shadowBlur={failed ? 18 : 0}
-        shadowOpacity={failed ? 0.28 : 0}
-      />
-      <Circle
-        x={spriteSize * 0.2}
-        y={-spriteSize * 0.02}
-        radius={spriteSize * 0.31}
-        fill={molecule.color}
-        stroke={theme.card}
-        strokeWidth={3}
-        shadowColor={failed ? theme.foreground : undefined}
-        shadowBlur={failed ? 18 : 0}
-        shadowOpacity={failed ? 0.28 : 0}
-      />
-      <Circle
-        x={0}
-        y={spriteSize * 0.24}
-        radius={spriteSize * 0.25}
-        fill={molecule.color}
-        stroke={theme.card}
-        strokeWidth={3}
-        shadowColor={failed ? theme.foreground : undefined}
-        shadowBlur={failed ? 18 : 0}
-        shadowOpacity={failed ? 0.28 : 0}
-      />
-      {compact ? null : (
-        <Text
-          x={-(labelWidth / 2)}
-          y={spriteSize * 0.58}
-          width={labelWidth}
-          align="center"
-          text={molecule.label}
-          fill={failed ? theme.destructive : theme.foreground}
-          fontFamily="Figtree Variable, sans-serif"
-          fontSize={14}
-          fontStyle="800"
+      {image ? (
+        <KonvaImage
+          image={image}
+          x={-(imageSize / 2)}
+          y={-(imageSize / 2)}
+          width={imageSize}
+          height={imageSize}
+          shadowColor={failed ? theme.destructive : theme.foreground}
+          shadowBlur={failed ? 20 : 12}
+          shadowOpacity={failed ? 0.34 : 0.12}
+          shadowOffsetY={failed ? 0 : 8}
         />
+      ) : (
+        <Circle radius={imageSize / 2} fill={theme.primary} opacity={0.26} />
       )}
     </Group>
   );
@@ -1202,6 +1140,28 @@ function StatusBadge({
       <span className="font-semibold">{value}</span>
     </Badge>
   );
+}
+
+function useCanvasImage(src: string) {
+  const [image, setImage] = useState<HTMLImageElement | null>(null);
+
+  useEffect(() => {
+    const nextImage = new window.Image();
+    let active = true;
+
+    nextImage.onload = () => {
+      if (active) {
+        setImage(nextImage);
+      }
+    };
+    nextImage.src = src;
+
+    return () => {
+      active = false;
+    };
+  }, [src]);
+
+  return image;
 }
 
 function useElementSize(
@@ -1375,15 +1335,14 @@ function buildCompetitiveBlockerPositions(
   }));
 }
 
-function getAllostericSite(size: CanvasSize) {
-  const enzymeX = size.width * 0.52;
-  const enzymeY = size.height * 0.52;
-  const radiusX = clamp(size.width * 0.2, 145, 230);
-  const radiusY = clamp(size.height * 0.24, 110, 165);
+function getAllostericSite(activeSite: ActiveSiteBounds) {
+  const radians = (activeSite.rotation * Math.PI) / 180;
+  const localX = (0.11 - 0.5) * activeSite.imageSize;
+  const localY = (0.5 - 0.5) * activeSite.imageSize;
 
   return {
-    x: enzymeX - radiusX * 0.64,
-    y: enzymeY + radiusY * 0.5,
+    x: activeSite.x + localX * Math.cos(radians) - localY * Math.sin(radians),
+    y: activeSite.y + localX * Math.sin(radians) + localY * Math.cos(radians),
   };
 }
 
@@ -1400,25 +1359,27 @@ function buildMoleculePositions(
   round: number,
   size: CanvasSize,
 ) {
-  const margin = 72;
+  const margin = 76;
   const centerX = size.width * 0.52;
   const centerY = size.height * 0.52;
   const zones = [
-    { minX: margin, maxX: centerX - 170, minY: margin, maxY: centerY - 100 },
-    { minX: centerX + 170, maxX: size.width - margin, minY: margin, maxY: centerY - 95 },
-    { minX: margin, maxX: centerX - 180, minY: centerY + 115, maxY: size.height - margin },
-    { minX: centerX + 165, maxX: size.width - margin, minY: centerY + 120, maxY: size.height - margin },
+    { minX: margin, maxX: centerX - 190, minY: margin, maxY: centerY - 115 },
+    { minX: centerX + 190, maxX: size.width - margin, minY: margin, maxY: centerY - 115 },
+    { minX: margin, maxX: centerX - 190, minY: centerY + 130, maxY: size.height - margin },
+    { minX: centerX + 190, maxX: size.width - margin, minY: centerY + 130, maxY: size.height - margin },
   ];
 
   return molecules.map((molecule, index) => {
     const zone = zones[index % zones.length];
     const x = randomInRange(`${molecule.id}-x`, round, zone.minX, zone.maxX);
     const y = randomInRange(`${molecule.id}-y`, round, zone.minY, zone.maxY);
+    const rotation = randomInRange(`${molecule.id}-rotation`, round, 0, 360);
 
     return {
       id: molecule.id,
       x: clamp(x, margin, size.width - margin),
       y: clamp(y, margin, size.height - margin),
+      rotation,
     };
   });
 }
@@ -1442,17 +1403,19 @@ function seededFraction(seed: string, round: number) {
   return value - Math.floor(value);
 }
 
-function getActiveSiteBounds(size: CanvasSize): ActiveSiteBounds {
+function getActiveSiteBounds(size: CanvasSize, round: number): ActiveSiteBounds {
   const enzymeX = size.width * 0.52;
   const enzymeY = size.height * 0.52;
-  const radiusX = clamp(size.width * 0.2, 145, 230);
-  const radiusY = clamp(size.height * 0.24, 110, 165);
+  const imageSize = clamp(Math.min(size.width * 0.34, size.height * 0.58), 190, 300);
+  const snapRadius = clamp(imageSize * 0.34, 72, 108);
 
   return {
-    x: enzymeX + radiusX * 0.42,
-    y: enzymeY - radiusY * 0.06,
-    radiusX: clamp(size.width * 0.065, 44, 64),
-    radiusY: clamp(size.height * 0.075, 34, 48),
+    x: enzymeX,
+    y: enzymeY,
+    radiusX: snapRadius,
+    radiusY: snapRadius,
+    imageSize,
+    rotation: randomInRange("enzyme-rotation", round, 0, 360),
   };
 }
 
