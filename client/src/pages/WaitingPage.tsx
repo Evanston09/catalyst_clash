@@ -1,8 +1,7 @@
 import { useState } from "react";
 import { Link, Navigate } from "react-router";
-import { BookOpenIcon, LogOutIcon, PlayIcon, UsersIcon } from "lucide-react";
+import { BookOpenIcon, CopyIcon, LogOutIcon, PlayIcon, UsersIcon } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -16,7 +15,8 @@ import { useMatchRoom } from "@/hooks/useMatchRoom";
 export function WaitingPage() {
   const { leaveRoom, match, room, startMatch } = useMatchRoom();
   const [starting, setStarting] = useState(false);
-  const canStartMatch = match.phase === "waiting" && match.playersConnected === 2;
+  const [copied, setCopied] = useState(false);
+  const canStartMatch = match.phase === "waiting" && match.playersConnected >= 2;
   const startButtonActive = starting || match.phase === "countdown";
 
   function handleStartMatch() {
@@ -26,6 +26,20 @@ export function WaitingPage() {
 
     setStarting(true);
     startMatch();
+  }
+
+  async function copyRoomCode() {
+    if (!match.roomCode) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(match.roomCode);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1200);
+    } catch {
+      setCopied(false);
+    }
   }
 
   if (!room) {
@@ -41,7 +55,7 @@ export function WaitingPage() {
   }
 
   return (
-    <main className="game-shell">
+    <main className="min-h-svh bg-background text-foreground">
       <section
         className="flex min-h-svh items-center justify-center p-4"
         aria-label="Match waiting room"
@@ -49,7 +63,7 @@ export function WaitingPage() {
         <Card className="w-full max-w-lg" size="sm">
           <CardHeader>
             <div className="flex items-center justify-between gap-3">
-              <Badge variant="outline">Room {match.roomCode}</Badge>
+              <CardTitle className="text-2xl font-bold">Waiting Room</CardTitle>
               <Button
                 type="button"
                 size="icon-sm"
@@ -60,20 +74,39 @@ export function WaitingPage() {
                 <LogOutIcon />
               </Button>
             </div>
-            <CardTitle className="text-2xl font-bold">Ready Check</CardTitle>
             <CardDescription>
-              Share the room code, then start once both players are here.
+              Share the room code, then start once at least two players are here.
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-4">
             <div className="grid grid-cols-[auto_auto_minmax(0,1fr)] items-center gap-2.5 rounded-lg border bg-muted/60 p-4">
               <UsersIcon className="size-5 text-muted-foreground" aria-hidden="true" />
               <strong className="text-3xl font-black leading-none">
-                {match.playersConnected}/2
+                {match.playersConnected}
               </strong>
               <span className="text-xs font-extrabold uppercase text-muted-foreground">
                 players joined
               </span>
+            </div>
+            <div className="rounded-lg border bg-background p-4">
+              <p className="m-0 text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                Room Code
+              </p>
+              <div className="mt-2 flex items-center justify-between gap-2">
+                <strong className="text-5xl font-black leading-none tracking-[0.15em]">
+                  {match.roomCode}
+                </strong>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={copyRoomCode}
+                  aria-label="Copy room code"
+                >
+                  <CopyIcon data-icon="inline-start" />
+                  {copied ? "Copied" : "Copy"}
+                </Button>
+              </div>
             </div>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <Button asChild size="lg" variant="outline">

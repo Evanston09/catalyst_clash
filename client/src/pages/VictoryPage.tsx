@@ -41,7 +41,7 @@ export function VictoryPage() {
     : `${match.ownName}: ${game.productCount} | ${match.opponentName}: ${match.opponentScore}`;
 
   return (
-    <main className="game-shell">
+    <main className="min-h-svh bg-background text-foreground">
       <section
         className="relative flex min-h-svh items-center justify-center overflow-hidden p-4"
         aria-label="Match result"

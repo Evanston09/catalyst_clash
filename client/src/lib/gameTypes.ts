@@ -79,6 +79,12 @@ export type RemotePlayerState = {
   };
 };
 
+export type MatchOpponent = {
+  sessionId: string;
+  displayName: string;
+  score: number;
+};
+
 export type RemoteMatchState = {
   phase: Exclude<MatchPhase, "lobby">;
   timeRemainingMs: number;
@@ -93,6 +99,7 @@ export type MultiplayerSnapshot = {
   playersConnected: number;
   opponentScore: number;
   opponentName: string;
+  opponents: MatchOpponent[];
   ownName: string;
   attackResource: number;
   result: RemotePlayerState["result"];

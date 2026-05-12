@@ -24,6 +24,7 @@ import {
 } from "@/lib/gameRules";
 import type {
   GameState,
+  MatchOpponent,
   MultiplayerSnapshot,
   RemoteMatchState,
   RemotePlayerState,
@@ -46,7 +47,10 @@ type MatchRoomContextValue = {
   leaveRoom: () => void;
   startMatch: () => void;
   restartMatch: () => void;
-  sendAttack: (kind: "competitive" | "noncompetitive") => void;
+  sendAttack: (
+    kind: "competitive" | "noncompetitive",
+    targetSessionId?: string,
+  ) => void;
   tryBindSubstrate: (substrateId: string, inActiveSite: boolean) => void;
   tryBindCofactor: (inCofactorSite: boolean) => void;
   clearCompetitiveBlocker: (blockerId: string) => void;
@@ -224,9 +228,10 @@ export function MatchRoomProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    const opponent = players.find(
+    const opponents = players.filter(
       (player) => player.sessionId !== joinedRoom.sessionId,
     );
+    const opponent = opponents[0];
 
     setMatch({
       phase: state.phase,
@@ -234,6 +239,11 @@ export function MatchRoomProvider({ children }: { children: ReactNode }) {
       playersConnected: players.length,
       opponentScore: opponent?.score ?? 0,
       opponentName: opponent?.displayName ?? "Rival",
+      opponents: opponents.map((remotePlayer): MatchOpponent => ({
+        sessionId: remotePlayer.sessionId,
+        displayName: remotePlayer.displayName,
+        score: remotePlayer.score,
+      })),
       ownName: ownPlayer?.displayName ?? "You",
       attackResource: ownPlayer?.attackResource ?? 0,
       result: ownPlayer?.result ?? "pending",
@@ -265,8 +275,11 @@ export function MatchRoomProvider({ children }: { children: ReactNode }) {
     navigate("/game");
   }
 
-  function sendAttack(kind: "competitive" | "noncompetitive") {
-    room?.send("sendAttack", { kind });
+  function sendAttack(
+    kind: "competitive" | "noncompetitive",
+    targetSessionId?: string,
+  ) {
+    room?.send("sendAttack", { kind, targetSessionId });
   }
 
   function tryBindSubstrate(substrateId: string, inActiveSite: boolean) {
@@ -579,6 +592,7 @@ function createEmptyMatch(): MultiplayerSnapshot {
     playersConnected: 0,
     opponentScore: 0,
     opponentName: "Rival",
+    opponents: [],
     ownName: "You",
     attackResource: 0,
     result: "pending",

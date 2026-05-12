@@ -48,31 +48,31 @@ const tutorialSteps: TutorialStep[] = [
     title: "Bind a cofactor",
     instruction: "Drag the cofactor into the hexagonal cofactor site.",
     detail:
-      "Some enzymes need a non-protein helper molecule. The cofactor changes the enzyme into an active form so catalysis can happen.",
+      "Some enzymes need a non-protein helper molecule. The cofactor changes the enzyme into an active form so catalysis can happen. Cofactors can be inorganic molecules (Zn2+, Cu2+, or Mg2+) or organic molecules (NAD+, FAD, and Coenzyme A). These are necessary for the enzyme’s biological activity."
   },
   {
     title: "Clear competitive inhibition",
     instruction: "Click or tap each blocker sitting on the field.",
     detail:
-      "Competitive inhibitors resemble substrates and compete for the active site, reducing how often the real substrate can bind.",
+      "Competitive inhibitors resemble substrates and compete for the active site, reducing how often the real substrate can bind. You can reverse this type of inhibition by increasing the substrate concentration. This will basically “knock out” the competitive inhibitor.",
   },
   {
     title: "Clear noncompetitive inhibition",
     instruction: "Press and hold the lock until the ring fills.",
     detail:
-      "Noncompetitive inhibitors bind away from the active site and change enzyme shape, lowering activity even when substrate is present.",
+      "Noncompetitive inhibitors bind away from the active site and change enzyme shape, lowering activity even when substrate is present. Specifically, they bind to the allosteric site, which in turn changes the active site, not allowing substrates to bind anymore.",
   },
   {
     title: "Spend energy",
     instruction: "Press either attack button to finish the tutorial.",
     detail:
-      "Making product represents successful catalysis. In the game, that success becomes energy you can spend to inhibit your rival.",
+      "Making a product represents the successful binding of the enzyme and substrate. In the game, that success becomes energy you can spend on competitive/noncompetitive inhibitors to  inhibit your rival.",
   },
   {
     title: "Ready for a match",
-    instruction: "You know the core loop: score, clear inhibition, and attack.",
+    instruction: "Score, Clear inhibition, and Attack!",
     detail:
-      "You have practiced enzyme specificity, cofactors, competitive inhibition, and noncompetitive inhibition.",
+      "Through this game, you have practiced and understood enzyme specificity, cofactors, competitive inhibition, and noncompetitive inhibition.",
   },
 ];
 
@@ -253,7 +253,7 @@ export function TutorialPage() {
   }
 
   return (
-    <main className="game-shell">
+    <main className="min-h-svh bg-background text-foreground">
       <section className="grid h-svh min-h-svh grid-rows-[auto_minmax(0,1fr)] bg-background text-foreground">
         <header className="flex flex-col gap-3 border-b bg-card/90 p-3 sm:flex-row sm:items-center sm:justify-between sm:p-4">
           <div className="grid gap-1">

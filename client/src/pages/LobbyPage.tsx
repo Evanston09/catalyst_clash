@@ -44,14 +44,17 @@ export function LobbyPage() {
   }
 
   return (
-    <main className="game-shell">
-      <section className="lobby-stage" aria-label="Catalyst Clash lobby">
-        <Card className="lobby-card" size="sm">
+    <main className="min-h-svh bg-background text-foreground">
+      <section
+        className="flex min-h-svh items-center justify-center p-4"
+        aria-label="Catalyst Clash lobby"
+      >
+        <Card className="w-full max-w-md" size="sm">
           <CardHeader>
             <CardTitle className="text-2xl font-bold">Catalyst Clash</CardTitle>
             <CardDescription>Create a 1v1 room or join with a code.</CardDescription>
           </CardHeader>
-          <CardContent className="lobby-card-content">
+          <CardContent className="flex flex-col gap-3">
             <Input
               aria-label="Display name"
               maxLength={18}
@@ -69,10 +72,10 @@ export function LobbyPage() {
               <PlayIcon data-icon="inline-start" />
               Create Room
             </Button>
-            <div className="join-row">
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2.5">
               <Input
                 aria-label="Room code"
-                className="room-code-input"
+                className="font-extrabold uppercase"
                 maxLength={4}
                 placeholder="CODE"
                 value={joinCode}
@@ -87,7 +90,9 @@ export function LobbyPage() {
                 Join
               </Button>
             </div>
-            {lobbyError ? <p className="lobby-error">{lobbyError}</p> : null}
+            {lobbyError ? (
+              <p className="m-0 text-sm text-destructive">{lobbyError}</p>
+            ) : null}
           </CardContent>
         </Card>
       </section>

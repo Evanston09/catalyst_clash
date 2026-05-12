@@ -37,6 +37,7 @@ type AdvanceAllostericPayload = {
 
 type SendAttackPayload = {
   kind?: unknown;
+  targetSessionId?: unknown;
 };
 
 type JoinOptions = {
@@ -44,7 +45,7 @@ type JoinOptions = {
 };
 
 export class CatalystMatchRoom extends Room {
-  maxClients = 2;
+  maxClients = 16;
   state = new CatalystMatchState();
 
   private countdownInterval: NodeJS.Timeout | null = null;
@@ -75,19 +76,19 @@ export class CatalystMatchRoom extends Room {
       this.sendAttack(client, payload);
     });
     this.onMessage("restartRequest", () => {
-      if (this.state.phase === "ended" && this.clients.length === 2) {
+      if (this.state.phase === "ended" && this.clients.length >= 2) {
         this.resetMatch();
       }
     });
     this.onMessage("startRequest", () => {
-      if (this.state.phase === "waiting" && this.state.players.size === 2) {
+      if (this.state.phase === "waiting" && this.state.players.size >= 2) {
         this.startCountdown();
       }
     });
   }
 
   onJoin(client: Client, options?: JoinOptions) {
-    if (this.state.phase !== "waiting" || this.state.players.size >= 2) {
+    if (this.state.phase !== "waiting" || this.state.players.size >= this.maxClients) {
       client.leave();
       return;
     }
@@ -98,11 +99,11 @@ export class CatalystMatchRoom extends Room {
     this.applyRound(player, 1);
     this.state.players.set(client.sessionId, player);
 
-    if (this.state.players.size === 2) {
+    if (this.state.players.size >= 2) {
       this.lock();
-      this.state.statusMessage = "Both players joined. Press Start when ready.";
+      this.state.statusMessage = "Players joined. Press Start when ready.";
       this.state.players.forEach((joinedPlayer) => {
-        joinedPlayer.statusMessage = "Both players joined. Press Start when ready.";
+        joinedPlayer.statusMessage = "Players joined. Press Start when ready.";
       });
       return;
     }
@@ -343,11 +344,18 @@ export class CatalystMatchRoom extends Room {
 
   private sendAttack(client: Client, payload: SendAttackPayload) {
     const player = this.getPlayer(client);
-    const opponent = this.getOpponent(client.sessionId);
+    const targetSessionId =
+      typeof payload.targetSessionId === "string" ? payload.targetSessionId : "";
+    const opponent = this.getAttackTarget(client.sessionId, targetSessionId);
     const kind = payload.kind === "competitive" ? "competitive" : "noncompetitive";
     const cost = attackCosts[kind];
 
-    if (!player || !opponent) {
+    if (!player) {
+      return;
+    }
+
+    if (!opponent) {
+      player.statusMessage = "Pick a valid player to inhibit.";
       return;
     }
 
@@ -407,25 +415,37 @@ export class CatalystMatchRoom extends Room {
       return;
     }
 
-    const [first, second] = players;
+    const topScore = Math.max(...players.map((player) => player.score));
+    const winners = players.filter((player) => player.score === topScore);
 
-    if (first.score === second.score) {
-      first.result = "draw";
-      second.result = "draw";
-      first.statusMessage = `Draw. Final score: ${first.score}.`;
-      second.statusMessage = `Draw. Final score: ${second.score}.`;
+    if (winners.length > 1) {
+      players.forEach((player) => {
+        if (player.score === topScore) {
+          player.result = "draw";
+          player.statusMessage = `Draw. Final score: ${player.score}.`;
+          return;
+        }
+
+        player.result = "loss";
+        player.statusMessage = `You lose. Top score was ${topScore}.`;
+      });
       this.state.winnerSessionId = "";
       this.state.statusMessage = "Draw.";
       return;
     }
 
-    const winner = first.score > second.score ? first : second;
-    const loser = winner === first ? second : first;
+    const winner = winners[0];
 
-    winner.result = "win";
-    loser.result = "loss";
-    winner.statusMessage = `You win ${winner.score}-${loser.score}.`;
-    loser.statusMessage = `You lose ${loser.score}-${winner.score}.`;
+    players.forEach((player) => {
+      if (player.sessionId === winner.sessionId) {
+        player.result = "win";
+        player.statusMessage = `You win with ${winner.score}.`;
+        return;
+      }
+
+      player.result = "loss";
+      player.statusMessage = `You lose. Winner scored ${winner.score}.`;
+    });
     this.state.winnerSessionId = winner.sessionId;
     this.state.statusMessage = "Match ended.";
   }
@@ -468,10 +488,20 @@ export class CatalystMatchRoom extends Room {
     return this.state.players.get(client.sessionId);
   }
 
-  private getOpponent(sessionId: string) {
-    return Array.from(this.state.players.values()).find(
+  private getAttackTarget(sessionId: string, targetSessionId: string) {
+    const opponents = Array.from(this.state.players.values()).filter(
       (player) => player.sessionId !== sessionId,
     );
+
+    if (!opponents.length) {
+      return undefined;
+    }
+
+    if (!targetSessionId) {
+      return opponents[0];
+    }
+
+    return opponents.find((player) => player.sessionId === targetSessionId);
   }
 
   private clearTimers() {

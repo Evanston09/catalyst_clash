@@ -1,4 +1,4 @@
-import { useMemo, useRef } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Navigate } from "react-router";
 import { LockIcon, RotateCcwIcon, SwordsIcon } from "lucide-react";
 
@@ -34,6 +34,9 @@ export function GamePage() {
     tryBindCofactor,
     tryBindSubstrate,
   } = useMatchRoom();
+  const [pendingAttackKind, setPendingAttackKind] = useState<
+    "competitive" | "noncompetitive" | null
+  >(null);
   const playfieldRef = useRef<HTMLDivElement>(null);
   const canvasSize = useElementSize(playfieldRef, defaultCanvasSize);
   const theme = useCanvasTheme();
@@ -54,6 +57,25 @@ export function GamePage() {
     game.status === "running" && match.attackResource >= attackCosts.noncompetitive;
   const canSendCompetitive =
     game.status === "running" && match.attackResource >= attackCosts.competitive;
+  const showTargetPopup = pendingAttackKind !== null && match.playersConnected > 2;
+
+  function requestAttack(kind: "competitive" | "noncompetitive") {
+    if (match.playersConnected > 2) {
+      setPendingAttackKind(kind);
+      return;
+    }
+
+    sendAttack(kind, match.opponents[0]?.sessionId);
+  }
+
+  function confirmAttack(targetSessionId: string) {
+    if (!pendingAttackKind) {
+      return;
+    }
+
+    sendAttack(pendingAttackKind, targetSessionId);
+    setPendingAttackKind(null);
+  }
 
   if (!room) {
     return <Navigate to="/lobby" replace />;
@@ -68,7 +90,7 @@ export function GamePage() {
   }
 
   return (
-    <main className="game-shell">
+    <main className="min-h-svh bg-background text-foreground">
       <section className="match-stage" aria-label="Enzyme reaction game">
         <div ref={playfieldRef} className="reaction-canvas">
           <ReactionStage
@@ -132,7 +154,7 @@ export function GamePage() {
                 size="lg"
                 variant="outline"
                 disabled={!canSendNoncompetitive}
-                onClick={() => sendAttack("noncompetitive")}
+                onClick={() => requestAttack("noncompetitive")}
               >
                 <LockIcon data-icon="inline-start" />
                 Noncompetitive
@@ -143,7 +165,7 @@ export function GamePage() {
                 size="lg"
                 variant="outline"
                 disabled={!canSendCompetitive}
-                onClick={() => sendAttack("competitive")}
+                onClick={() => requestAttack("competitive")}
               >
                 <SwordsIcon data-icon="inline-start" />
                 Competitive
@@ -164,6 +186,32 @@ export function GamePage() {
           </div>
         </div>
       </section>
+      {showTargetPopup ? (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/45 p-4">
+          <Card className="w-full max-w-sm" size="sm">
+            <CardContent className="grid gap-3 p-5">
+              <p className="m-0 text-sm font-semibold">Choose player to inhibit</p>
+              {match.opponents.map((opponent) => (
+                <Button
+                  key={opponent.sessionId}
+                  type="button"
+                  variant="outline"
+                  onClick={() => confirmAttack(opponent.sessionId)}
+                >
+                  {opponent.displayName} ({opponent.score})
+                </Button>
+              ))}
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setPendingAttackKind(null)}
+              >
+                Cancel
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      ) : null}
     </main>
   );
 }
