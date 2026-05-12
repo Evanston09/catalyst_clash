@@ -28,9 +28,9 @@ export function GamePage() {
     game,
     leaveRoom,
     match,
-    restartMatch,
     room,
     sendAttack,
+    startRequested,
     tryBindCofactor,
     tryBindSubstrate,
   } = useMatchRoom();
@@ -57,6 +57,14 @@ export function GamePage() {
 
   if (!room) {
     return <Navigate to="/lobby" replace />;
+  }
+
+  if (match.phase === "waiting" && !startRequested) {
+    return <Navigate to="/waiting" replace />;
+  }
+
+  if (match.phase === "ended") {
+    return <Navigate to="/victory" replace />;
   }
 
   return (
@@ -96,10 +104,7 @@ export function GamePage() {
           </Card>
           <div className="status-strip">
             <Badge variant="outline">Room {match.roomCode}</Badge>
-            {match.phase === "waiting" ? (
-              <Badge variant="secondary">{match.playersConnected}/2 players</Badge>
-            ) : null}
-            {match.phase === "countdown" ? (
+            {match.phase === "waiting" || match.phase === "countdown" ? (
               <Badge variant="secondary">Starting</Badge>
             ) : null}
             {blockingReason ? (
@@ -144,12 +149,6 @@ export function GamePage() {
                 Competitive
                 <Badge variant="secondary">5</Badge>
               </Button>
-              {match.phase === "ended" ? (
-                <Button type="button" size="lg" onClick={restartMatch}>
-                  <RotateCcwIcon data-icon="inline-start" />
-                  Rematch
-                </Button>
-              ) : null}
             </CardContent>
           </Card>
           <div className="utility-actions">

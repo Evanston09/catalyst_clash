@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 
+import allostericInhibitorAssetSrc from "@/assets/enzymes/allosteric_inhibitor.png?url";
 import cofactorAssetSrc from "@/assets/enzymes/cofactor.png?url";
 import type { EnzymePair, GameState, Molecule } from "@/lib/gameTypes";
 import { cofactorRoundChance, scoreForRound, seededFraction } from "@/lib/gameRules";
@@ -142,6 +143,22 @@ export function buildRound(round: number): Pick<
     failedSubstrateId: null,
     molecules: shuffleByRound(molecules, round),
   };
+}
+
+export function getAllostericInhibitorImageSrc() {
+  return allostericInhibitorAssetSrc;
+}
+
+export function getCompetitiveInhibitorImageSrc(seed: string, round: number) {
+  const catalog = enzymePairs.length > 1 ? enzymePairs : cofactorEnzymePairs;
+  const baseIndex = Math.max(
+    0,
+    catalog.findIndex((pair) => pair.setId === buildRound(round).enzymePair.setId),
+  );
+  const offset = (scoreForRound(seed, round) % Math.max(1, catalog.length - 1)) + 1;
+  const inhibitorPair = catalog[(baseIndex + offset) % catalog.length];
+
+  return inhibitorPair?.substrateSrc ?? catalog[0]?.substrateSrc ?? cofactorAssetSrc;
 }
 
 function shuffleByRound(molecules: Molecule[], round: number) {

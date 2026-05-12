@@ -10,7 +10,11 @@ import {
 import { Client, type Room } from "@colyseus/sdk";
 import { useNavigate } from "react-router";
 
-import { buildRound, preloadUpcomingRoundImages } from "@/lib/gameAssets";
+import {
+  buildRound,
+  getCompetitiveInhibitorImageSrc,
+  preloadUpcomingRoundImages,
+} from "@/lib/gameAssets";
 import {
   allostericHoldTargetMs,
   matchDurationMs,
@@ -36,9 +40,11 @@ type MatchRoomContextValue = {
   lobbyError: string;
   connecting: boolean;
   match: MultiplayerSnapshot;
+  startRequested: boolean;
   createRoom: (displayName: string) => Promise<void>;
   joinExistingRoom: (displayName: string) => Promise<void>;
   leaveRoom: () => void;
+  startMatch: () => void;
   restartMatch: () => void;
   sendAttack: (kind: "competitive" | "noncompetitive") => void;
   tryBindSubstrate: (substrateId: string, inActiveSite: boolean) => void;
@@ -57,6 +63,7 @@ export function MatchRoomProvider({ children }: { children: ReactNode }) {
   const [lobbyError, setLobbyError] = useState("");
   const [connecting, setConnecting] = useState(false);
   const [match, setMatch] = useState<MultiplayerSnapshot>(createEmptyMatch);
+  const [startRequested, setStartRequested] = useState(false);
   const roomRef = useRef<Room<RemoteMatchState> | null>(null);
   const intentionalLeaveRef = useRef(false);
 
@@ -157,7 +164,7 @@ export function MatchRoomProvider({ children }: { children: ReactNode }) {
             );
 
       attachRoom(joinedRoom);
-      navigate("/game");
+      navigate("/waiting");
     } catch (error) {
       setLobbyError(
         error instanceof Error ? error.message : "Could not connect to match.",
@@ -185,6 +192,7 @@ export function MatchRoomProvider({ children }: { children: ReactNode }) {
         setRoom(null);
         setMatch(createEmptyMatch());
         setGame(createInitialState());
+        setStartRequested(false);
 
         if (!intentionalLeaveRef.current) {
           setLobbyError("Disconnected from room.");
@@ -241,11 +249,20 @@ export function MatchRoomProvider({ children }: { children: ReactNode }) {
     setRoom(null);
     setMatch(createEmptyMatch());
     setGame(createInitialState());
+    setStartRequested(false);
     navigate("/lobby");
   }
 
   function restartMatch() {
+    setStartRequested(false);
     room?.send("restartRequest");
+    navigate("/waiting");
+  }
+
+  function startMatch() {
+    setStartRequested(true);
+    room?.send("startRequest");
+    navigate("/game");
   }
 
   function sendAttack(kind: "competitive" | "noncompetitive") {
@@ -447,9 +464,11 @@ export function MatchRoomProvider({ children }: { children: ReactNode }) {
       lobbyError,
       connecting,
       match,
+      startRequested,
       createRoom,
       joinExistingRoom,
       leaveRoom,
+      startMatch,
       restartMatch,
       sendAttack,
       tryBindSubstrate,
@@ -457,7 +476,7 @@ export function MatchRoomProvider({ children }: { children: ReactNode }) {
       clearCompetitiveBlocker,
       advanceAllostericHold,
     }),
-    [game, room, joinCode, lobbyError, connecting, match],
+    [game, room, joinCode, lobbyError, connecting, match, startRequested],
   );
 
   return (
@@ -580,11 +599,17 @@ function mapRemotePlayerToGame(
         : "idle";
   const competitiveBlockers = Array.from(
     player.inhibition.competitiveBlockers,
-  ).map((blocker) => ({
-    id: blocker.id,
-    xRatio: blocker.xRatio,
-    yRatio: blocker.yRatio,
-  }));
+  ).map((blocker, index) => {
+    const blockerSeed = blocker.id || `competitive-${player.round}-${index}`;
+
+    return {
+      id: blocker.id,
+      imageSrc:
+        blocker.imageSrc ?? getCompetitiveInhibitorImageSrc(blockerSeed, player.round),
+      xRatio: blocker.xRatio,
+      yRatio: blocker.yRatio,
+    };
+  });
 
   return {
     ...current,

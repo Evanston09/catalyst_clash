@@ -19,6 +19,7 @@ export type BlockingReason = "competitive" | "allosteric";
 
 export type CompetitiveBlocker = {
   id: string;
+  imageSrc?: string;
   xRatio: number;
   yRatio: number;
 };
@@ -56,6 +57,7 @@ export type MatchPhase = "lobby" | "waiting" | "countdown" | "running" | "ended"
 
 export type RemoteCompetitiveBlocker = {
   id: string;
+  imageSrc?: string;
   xRatio: number;
   yRatio: number;
 };

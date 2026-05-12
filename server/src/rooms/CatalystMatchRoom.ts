@@ -77,6 +77,10 @@ export class CatalystMatchRoom extends Room {
     this.onMessage("restartRequest", () => {
       if (this.state.phase === "ended" && this.clients.length === 2) {
         this.resetMatch();
+      }
+    });
+    this.onMessage("startRequest", () => {
+      if (this.state.phase === "waiting" && this.state.players.size === 2) {
         this.startCountdown();
       }
     });
@@ -96,7 +100,10 @@ export class CatalystMatchRoom extends Room {
 
     if (this.state.players.size === 2) {
       this.lock();
-      this.startCountdown();
+      this.state.statusMessage = "Both players joined. Press Start when ready.";
+      this.state.players.forEach((joinedPlayer) => {
+        joinedPlayer.statusMessage = "Both players joined. Press Start when ready.";
+      });
       return;
     }
 

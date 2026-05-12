@@ -14,7 +14,10 @@ import {
   Text,
 } from "react-konva";
 
-import { useCanvasImage } from "@/lib/gameAssets";
+import {
+  getAllostericInhibitorImageSrc,
+  useCanvasImage,
+} from "@/lib/gameAssets";
 import {
   brownianJitterRadius,
   brownianWanderRadius,
@@ -244,6 +247,7 @@ export function ReactionStage({
           <CompetitiveBlockerNode
             key={blocker.id}
             blocker={blocker}
+            imageSize={activeSite.imageSize}
             theme={theme}
             onClear={() => onClearCompetitiveBlocker(blocker.id)}
           />
@@ -502,13 +506,17 @@ function ActiveSiteBlockedOverlay({
 
 function CompetitiveBlockerNode({
   blocker,
+  imageSize,
   onClear,
   theme,
 }: {
   blocker: CompetitiveBlockerPosition;
+  imageSize: number;
   onClear: () => void;
   theme: CanvasTheme;
 }) {
+  const image = useCanvasImage(blocker.imageSrc ?? getAllostericInhibitorImageSrc());
+
   return (
     <Group
       x={blocker.x}
@@ -530,36 +538,20 @@ function CompetitiveBlockerNode({
         }
       }}
     >
-      <Circle
-        radius={24}
-        fill={theme.isDark ? "#f59f00" : "#ffb703"}
-        stroke={theme.foreground}
-        strokeWidth={2}
-        opacity={0.92}
-      />
-      <Line
-        points={[-12, -12, 12, 12]}
-        stroke={theme.destructive}
-        strokeWidth={5}
-        lineCap="round"
-      />
-      <Line
-        points={[12, -12, -12, 12]}
-        stroke={theme.destructive}
-        strokeWidth={5}
-        lineCap="round"
-      />
-      <Text
-        x={-42}
-        y={30}
-        width={84}
-        align="center"
-        text="compete"
-        fill={theme.foreground}
-        fontFamily="Figtree Variable, sans-serif"
-        fontSize={12}
-        fontStyle="800"
-      />
+      {image ? (
+        <KonvaImage
+          image={image}
+          x={-(imageSize / 2)}
+          y={-(imageSize / 2)}
+          width={imageSize}
+          height={imageSize}
+          opacity={0.95}
+          shadowColor={theme.destructive}
+          shadowBlur={26}
+          shadowOpacity={0.55}
+          shadowOffsetY={0}
+        />
+      ) : null}
     </Group>
   );
 }
@@ -577,6 +569,7 @@ function AllostericLock({
 }) {
   const [holding, setHolding] = useState(false);
   const clampedProgress = clamp(progress, 0, 1);
+  const image = useCanvasImage(getAllostericInhibitorImageSrc());
 
   useEffect(() => {
     if (!holding) {
@@ -616,10 +609,9 @@ function AllostericLock({
       }}
     >
       <Circle
-        radius={38}
-        fill={theme.isDark ? "rgba(248,113,113,0.28)" : "rgba(220,38,38,0.16)"}
-        stroke={theme.destructive}
-        strokeWidth={3}
+        radius={31}
+        fill={theme.isDark ? "rgba(248,113,113,0.18)" : "rgba(220,38,38,0.1)"}
+        strokeEnabled={false}
         shadowColor={theme.destructive}
         shadowBlur={holding ? 24 : 12}
         shadowOpacity={holding ? 0.34 : 0.18}
@@ -631,21 +623,27 @@ function AllostericLock({
         fill={theme.destructive}
         rotation={-90}
       />
-      <Line
-        points={[-15, -15, 15, 15]}
-        stroke={theme.destructive}
-        strokeWidth={7}
-        lineCap="round"
-      />
-      <Line
-        points={[15, -15, -15, 15]}
-        stroke={theme.destructive}
-        strokeWidth={7}
-        lineCap="round"
+      {image ? (
+        <KonvaImage
+          image={image}
+          x={-19}
+          y={-19}
+          width={38}
+          height={38}
+          shadowColor={theme.destructive}
+          shadowBlur={holding ? 18 : 10}
+          shadowOpacity={holding ? 0.35 : 0.18}
+        />
+      ) : null}
+      <Circle
+        radius={19}
+        fill={theme.destructive}
+        opacity={0.2}
+        listening={false}
       />
       <Text
         x={-36}
-        y={28}
+        y={31}
         width={72}
         align="center"
         text="hold"
