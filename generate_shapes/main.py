@@ -11,6 +11,7 @@ from pathlib import Path
 Color = tuple[int, int, int, int]
 Point = tuple[float, float]
 Style = tuple[Color, Color, Color, Color]
+CofactorSiteMode = str
 
 
 FILL_COLOR: Color = (88, 203, 154, 255)
@@ -29,6 +30,12 @@ COLOR_PAIRS: tuple[tuple[Color, Color], ...] = (
     ((250, 143, 92, 255), (92, 198, 179, 255)),
     ((185, 141, 236, 255), (239, 205, 91, 255)),
 )
+ALLOSTERIC_SITE_RADIUS_RATIO = 0.075
+ALLOSTERIC_SITE_RING_RATIO = 0.016
+COFACTOR_SITE_RADIUS_RATIO = 0.066
+COFACTOR_SITE_RING_RATIO = 0.014
+ALLOSTERIC_ASSET_FILL: Color = (231, 68, 72, 255)
+COFACTOR_ASSET_FILL: Color = (62, 205, 112, 255)
 
 
 def clamp(value: float, low: float, high: float) -> float:
@@ -130,6 +137,29 @@ def draw_disc_on_opaque(
             blend_pixel(image, size, x, y, color)
 
 
+def draw_disc(
+    image: bytearray,
+    size: int,
+    center: Point,
+    radius: float,
+    color: Color,
+) -> None:
+    min_x = math.floor(center[0] - radius)
+    max_x = math.ceil(center[0] + radius)
+    min_y = math.floor(center[1] - radius)
+    max_y = math.ceil(center[1] + radius)
+
+    for y in range(min_y, max_y + 1):
+        py = y + 0.5
+        for x in range(min_x, max_x + 1):
+            px = x + 0.5
+            if math.hypot(px - center[0], py - center[1]) > radius:
+                continue
+            if x < 0 or y < 0 or x >= size or y >= size:
+                continue
+            blend_pixel(image, size, x, y, color)
+
+
 def clear_disc(image: bytearray, size: int, center: Point, radius: float) -> None:
     min_x = math.floor(center[0] - radius)
     max_x = math.ceil(center[0] + radius)
@@ -149,12 +179,123 @@ def clear_disc(image: bytearray, size: int, center: Point, radius: float) -> Non
             image[index : index + 4] = b"\x00\x00\x00\x00"
 
 
+def regular_polygon(center: Point, radius: float, sides: int, rotation: float = 0) -> list[Point]:
+    return [
+        (
+            center[0] + math.cos(rotation + math.tau * index / sides) * radius,
+            center[1] + math.sin(rotation + math.tau * index / sides) * radius,
+        )
+        for index in range(sides)
+    ]
+
+
+def point_in_polygon(point: Point, polygon: list[Point]) -> bool:
+    inside = False
+    x, y = point
+    previous_x, previous_y = polygon[-1]
+
+    for current_x, current_y in polygon:
+        if (current_y > y) != (previous_y > y):
+            slope_x = (previous_x - current_x) * (y - current_y) / (previous_y - current_y) + current_x
+            if x < slope_x:
+                inside = not inside
+        previous_x, previous_y = current_x, current_y
+
+    return inside
+
+
+def draw_polygon_on_opaque(
+    image: bytearray,
+    size: int,
+    polygon: list[Point],
+    color: Color,
+) -> None:
+    min_x = math.floor(min(point[0] for point in polygon))
+    max_x = math.ceil(max(point[0] for point in polygon))
+    min_y = math.floor(min(point[1] for point in polygon))
+    max_y = math.ceil(max(point[1] for point in polygon))
+
+    for y in range(min_y, max_y + 1):
+        py = y + 0.5
+        for x in range(min_x, max_x + 1):
+            px = x + 0.5
+            if x < 0 or y < 0 or x >= size or y >= size:
+                continue
+            if image[(y * size + x) * 4 + 3] == 0:
+                continue
+            if not point_in_polygon((px, py), polygon):
+                continue
+
+            blend_pixel(image, size, x, y, color)
+
+
+def draw_polygon(
+    image: bytearray,
+    size: int,
+    polygon: list[Point],
+    color: Color,
+) -> None:
+    min_x = math.floor(min(point[0] for point in polygon))
+    max_x = math.ceil(max(point[0] for point in polygon))
+    min_y = math.floor(min(point[1] for point in polygon))
+    max_y = math.ceil(max(point[1] for point in polygon))
+
+    for y in range(min_y, max_y + 1):
+        py = y + 0.5
+        for x in range(min_x, max_x + 1):
+            px = x + 0.5
+            if x < 0 or y < 0 or x >= size or y >= size:
+                continue
+            if not point_in_polygon((px, py), polygon):
+                continue
+
+            blend_pixel(image, size, x, y, color)
+
+
+def clear_polygon(image: bytearray, size: int, polygon: list[Point]) -> None:
+    min_x = math.floor(min(point[0] for point in polygon))
+    max_x = math.ceil(max(point[0] for point in polygon))
+    min_y = math.floor(min(point[1] for point in polygon))
+    max_y = math.ceil(max(point[1] for point in polygon))
+
+    for y in range(min_y, max_y + 1):
+        py = y + 0.5
+        for x in range(min_x, max_x + 1):
+            px = x + 0.5
+            if x < 0 or y < 0 or x >= size or y >= size:
+                continue
+            if not point_in_polygon((px, py), polygon):
+                continue
+
+            index = (y * size + x) * 4
+            image[index : index + 4] = b"\x00\x00\x00\x00"
+
+
 def cut_allosteric_site(image: bytearray, size: int, outline_color: Color) -> None:
     site_center = (size * 0.11, size * 0.5)
-    site_radius = size * 0.075
-    ring_width = max(2, size * 0.016)
+    site_radius = size * ALLOSTERIC_SITE_RADIUS_RATIO
+    ring_width = max(2, size * ALLOSTERIC_SITE_RING_RATIO)
     draw_disc_on_opaque(image, size, site_center, site_radius + ring_width, outline_color)
     clear_disc(image, size, site_center, site_radius)
+
+
+def cut_cofactor_site(image: bytearray, size: int, outline_color: Color) -> None:
+    site_center = (size * 0.29, size * 0.28)
+    site_radius = size * COFACTOR_SITE_RADIUS_RATIO
+    ring_width = max(2, size * COFACTOR_SITE_RING_RATIO)
+    rotation = math.pi / 6
+    ring = regular_polygon(site_center, site_radius + ring_width, 6, rotation)
+    hole = regular_polygon(site_center, site_radius, 6, rotation)
+    draw_polygon_on_opaque(image, size, ring, outline_color)
+    clear_polygon(image, size, hole)
+
+
+def should_cut_cofactor_site(rng: random.Random, mode: CofactorSiteMode) -> bool:
+    if mode == "always":
+        return True
+    if mode == "never":
+        return False
+    return rng.random() < 0.38
 
 
 def draw_line_segment_on_opaque(
@@ -190,19 +331,19 @@ def build_split_profile(
     normal = (-direction[1], direction[0])
     half_length = radius * 1.08
     center_offset = rng.uniform(radius * 0.2, radius * 0.42)
-    segment_count = rng.randint(12, 20)
-    curviness = rng.uniform(0.22, 0.76)
+    segment_count = rng.randint(7, 11)
+    curviness = rng.uniform(0.42, 0.82)
     controls: list[Point] = []
 
     for index in range(segment_count + 1):
         progress = index / segment_count
         u = lerp(-half_length, half_length, progress)
         end_fade = math.sin(progress * math.pi)
-        jagged_offset = rng.uniform(-radius * 0.26, radius * 0.26) * end_fade
+        jagged_offset = rng.uniform(-radius * 0.14, radius * 0.14) * end_fade
         wave_offset = (
-            math.sin(progress * math.tau * rng.uniform(1.7, 3.9) + rng.uniform(0, math.tau))
+            math.sin(progress * math.tau * rng.uniform(0.7, 1.7) + rng.uniform(0, math.tau))
             * radius
-            * 0.07
+            * 0.035
             * end_fade
         )
         v = center_offset + jagged_offset + wave_offset
@@ -215,7 +356,7 @@ def build_split_profile(
         p2 = controls[index + 1]
         p3 = controls[min(index + 2, len(controls) - 1)]
         steps = 5 + round(curviness * 8)
-        local_curve = clamp(curviness + rng.uniform(-0.3, 0.25), 0.04, 0.94)
+        local_curve = clamp(curviness + rng.uniform(-0.12, 0.12), 0.18, 0.94)
 
         for step in range(steps):
             t = step / steps
@@ -288,6 +429,7 @@ def render_split_piece(
     piece: str,
     show_split_edge: bool,
     line_width: int,
+    cofactor_site: CofactorSiteMode,
 ) -> bytearray:
     rng = random.Random(seed)
     scale = 4
@@ -334,6 +476,8 @@ def render_split_piece(
 
     if piece == "enzyme":
         cut_allosteric_site(image, render_size, outline)
+        if should_cut_cofactor_site(rng, cofactor_site):
+            cut_cofactor_site(image, render_size, outline)
 
     return downsample(image, render_size, size, scale)
 
@@ -389,11 +533,67 @@ def write_png(path: Path, width: int, height: int, pixels: bytearray) -> None:
 
 
 def render_substrate(size: int, seed: int | None, show_split_edge: bool, line_width: int) -> bytearray:
-    return render_split_piece(size, seed, "substrate", show_split_edge, line_width)
+    return render_split_piece(size, seed, "substrate", show_split_edge, line_width, "never")
 
 
-def render_enzyme(size: int, seed: int | None, show_split_edge: bool, line_width: int) -> bytearray:
-    return render_split_piece(size, seed, "enzyme", show_split_edge, line_width)
+def render_enzyme(
+    size: int,
+    seed: int | None,
+    show_split_edge: bool,
+    line_width: int,
+    cofactor_site: CofactorSiteMode = "auto",
+) -> bytearray:
+    return render_split_piece(size, seed, "enzyme", show_split_edge, line_width, cofactor_site)
+
+
+def render_allosteric_asset(size: int) -> tuple[int, bytearray]:
+    asset_size = max(8, round(size * ALLOSTERIC_SITE_RADIUS_RATIO * 2))
+    scale = 4
+    render_size = asset_size * scale
+    image = bytearray(render_size * render_size * 4)
+    center = (render_size / 2, render_size / 2)
+    radius = render_size * 0.47
+    outline = mix_color(ALLOSTERIC_ASSET_FILL, (0, 0, 0, 255), 0.34)
+    highlight = mix_color(ALLOSTERIC_ASSET_FILL, (255, 255, 255, 255), 0.32)
+
+    draw_disc(image, render_size, center, radius, outline)
+    draw_disc(image, render_size, center, radius * 0.82, ALLOSTERIC_ASSET_FILL)
+    draw_disc(
+        image,
+        render_size,
+        (center[0] - radius * 0.25, center[1] - radius * 0.3),
+        radius * 0.22,
+        highlight,
+    )
+    return asset_size, downsample(image, render_size, asset_size, scale)
+
+
+def render_cofactor_asset(size: int) -> tuple[int, bytearray]:
+    asset_size = max(8, round(size * COFACTOR_SITE_RADIUS_RATIO * 2))
+    scale = 4
+    render_size = asset_size * scale
+    image = bytearray(render_size * render_size * 4)
+    center = (render_size / 2, render_size / 2)
+    radius = render_size * 0.47
+    rotation = math.pi / 6
+    outline = mix_color(COFACTOR_ASSET_FILL, (0, 0, 0, 255), 0.36)
+    highlight = mix_color(COFACTOR_ASSET_FILL, (255, 255, 255, 255), 0.32)
+
+    draw_polygon(image, render_size, regular_polygon(center, radius, 6, rotation), outline)
+    draw_polygon(
+        image,
+        render_size,
+        regular_polygon(center, radius * 0.82, 6, rotation),
+        COFACTOR_ASSET_FILL,
+    )
+    draw_disc(
+        image,
+        render_size,
+        (center[0] - radius * 0.2, center[1] - radius * 0.25),
+        radius * 0.18,
+        highlight,
+    )
+    return asset_size, downsample(image, render_size, asset_size, scale)
 
 
 def output_paths(asset: str, output: str) -> list[tuple[str, Path]]:
@@ -419,6 +619,63 @@ def output_paths(asset: str, output: str) -> list[tuple[str, Path]]:
     return [(asset, path / names[asset])]
 
 
+def render_asset(
+    asset: str,
+    size: int,
+    seed: int,
+    show_split_edge: bool,
+    line_width: int,
+    cofactor_site: CofactorSiteMode,
+) -> bytearray:
+    if asset == "substrate":
+        return render_substrate(size, seed, show_split_edge, line_width)
+    return render_enzyme(size, seed, show_split_edge, line_width, cofactor_site)
+
+
+def write_asset_outputs(
+    asset: str,
+    output: Path,
+    size: int,
+    seed: int,
+    show_split_edge: bool,
+    line_width: int,
+    cofactor_site: CofactorSiteMode,
+) -> None:
+    for asset_name, asset_output in output_paths(asset, str(output)):
+        asset_output.parent.mkdir(parents=True, exist_ok=True)
+        pixels = render_asset(
+            asset_name,
+            size,
+            seed,
+            show_split_edge,
+            line_width,
+            cofactor_site,
+        )
+        write_png(asset_output, size, size, pixels)
+        print(f"Wrote {asset_output}")
+
+
+def seed_for_index(base_seed: int | None, index: int) -> int:
+    if base_seed is None:
+        return random.randrange(1 << 32)
+    return base_seed + index
+
+
+def write_site_assets(output: Path, size: int, include_cofactor: bool) -> None:
+    output.mkdir(parents=True, exist_ok=True)
+
+    allosteric_size, allosteric_pixels = render_allosteric_asset(size)
+    allosteric_output = output / "allosteric_inhibitor.png"
+    write_png(allosteric_output, allosteric_size, allosteric_size, allosteric_pixels)
+    print(f"Wrote {allosteric_output}")
+
+    if include_cofactor:
+        cofactor_size, cofactor_pixels = render_cofactor_asset(size)
+        cofactor_output = output / "cofactor.png"
+        write_png(cofactor_output, cofactor_size, cofactor_size, cofactor_pixels)
+        print(f"Wrote {cofactor_output}")
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Generate transparent procedural enzyme and substrate PNG assets."
@@ -437,6 +694,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--size", type=int, default=256, help="Output width and height.")
     parser.add_argument("--seed", type=int, default=None, help="Seed for repeatable assets.")
     parser.add_argument(
+        "--count",
+        type=int,
+        default=1,
+        help="Number of seeded asset sets to generate.",
+    )
+    parser.add_argument(
         "--line-width",
         type=int,
         default=12,
@@ -447,6 +710,23 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Hide the dark outline along the matching split edge.",
     )
+    parser.add_argument(
+        "--cofactor-site",
+        choices=("auto", "always", "never"),
+        default="auto",
+        help=(
+            "Control the extra hexagonal cofactor pocket on enzymes. "
+            "Auto adds it to some seeded enzymes."
+        ),
+    )
+    parser.add_argument(
+        "--split-cofactor-output",
+        action="store_true",
+        help=(
+            "Generate two folder families under --output: with_cofactors and "
+            "without_cofactors."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -456,20 +736,52 @@ def main() -> None:
         raise SystemExit("--size must be at least 16 pixels")
     if args.line_width < 1:
         raise SystemExit("--line-width must be at least 1 pixel")
+    if args.count < 1:
+        raise SystemExit("--count must be at least 1")
 
-    seed = args.seed
-    if seed is None:
-        seed = random.randrange(1 << 32)
+    output = Path(args.output)
+    if (args.count > 1 or args.split_cofactor_output) and output.suffix.lower() == ".png":
+        raise SystemExit("--output must be a directory when using --count or --split-cofactor-output")
 
-    for asset, output in output_paths(args.asset, args.output):
-        output.parent.mkdir(parents=True, exist_ok=True)
-        if asset == "substrate":
-            pixels = render_substrate(args.size, seed, not args.no_line, args.line_width)
+    if args.split_cofactor_output:
+        write_site_assets(output, args.size, include_cofactor=True)
+    elif args.count > 1:
+        write_site_assets(output, args.size, include_cofactor=args.cofactor_site != "never")
+
+    for index in range(args.count):
+        seed = seed_for_index(args.seed, index)
+        set_output = output if args.count == 1 else output / f"set_{index + 1}"
+
+        if args.split_cofactor_output:
+            set_name = f"set_{index + 1}"
+            write_asset_outputs(
+                args.asset,
+                output / "without_cofactors" / set_name,
+                args.size,
+                seed,
+                not args.no_line,
+                args.line_width,
+                "never",
+            )
+            write_asset_outputs(
+                args.asset,
+                output / "with_cofactors" / set_name,
+                args.size,
+                seed,
+                not args.no_line,
+                args.line_width,
+                "always",
+            )
         else:
-            pixels = render_enzyme(args.size, seed, not args.no_line, args.line_width)
-
-        write_png(output, args.size, args.size, pixels)
-        print(f"Wrote {output}")
+            write_asset_outputs(
+                args.asset,
+                set_output,
+                args.size,
+                seed,
+                not args.no_line,
+                args.line_width,
+                args.cofactor_site,
+            )
 
 
 if __name__ == "__main__":

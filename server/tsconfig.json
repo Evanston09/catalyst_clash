@@ -1,0 +1,24 @@
+{
+    "compilerOptions": {
+        "outDir": "./dist",
+        "rootDir": "./src",
+        "module": "commonjs",
+        "lib": ["ES2023", "DOM"],
+        "target": "ES2023",
+        "declaration": true,
+        "removeComments": true,
+        "noImplicitAny": false,
+        "experimentalDecorators": true,
+        "sourceMap": true,
+        "esModuleInterop": true,
+        "strict": true,
+        "allowJs": true,
+        "skipLibCheck": true,
+        "strictNullChecks": false,
+        "forceConsistentCasingInFileNames": true,
+        "useDefineForClassFields": false
+    },
+    "include": [
+      "src"
+    ]
+}
