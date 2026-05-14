@@ -1,12 +1,4 @@
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Client, type Room } from "@colyseus/sdk";
 import { useNavigate } from "react-router";
 
@@ -22,6 +14,7 @@ import {
   createEmptyInhibitionState,
   getBlockingReason,
 } from "@/lib/gameRules";
+import { MatchRoomContext, type MatchRoomContextValue } from "@/hooks/matchRoomContext";
 import type {
   GameState,
   MatchOpponent,
@@ -32,32 +25,6 @@ import type {
 
 const colyseusServerUrl =
   import.meta.env.VITE_COLYSEUS_URL ?? "http://localhost:3000";
-
-type MatchRoomContextValue = {
-  game: GameState;
-  room: Room<RemoteMatchState> | null;
-  joinCode: string;
-  setJoinCode: (joinCode: string) => void;
-  lobbyError: string;
-  connecting: boolean;
-  match: MultiplayerSnapshot;
-  startRequested: boolean;
-  createRoom: (displayName: string) => Promise<void>;
-  joinExistingRoom: (displayName: string) => Promise<void>;
-  leaveRoom: () => void;
-  startMatch: () => void;
-  restartMatch: () => void;
-  sendAttack: (
-    kind: "competitive" | "noncompetitive",
-    targetSessionId?: string,
-  ) => void;
-  tryBindSubstrate: (substrateId: string, inActiveSite: boolean) => void;
-  tryBindCofactor: (inCofactorSite: boolean) => void;
-  clearCompetitiveBlocker: (blockerId: string) => void;
-  advanceAllostericHold: (deltaMs: number) => void;
-};
-
-const MatchRoomContext = createContext<MatchRoomContextValue | null>(null);
 
 export function MatchRoomProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
@@ -222,6 +189,7 @@ export function MatchRoomProvider({ children }: { children: ReactNode }) {
         phase: state?.phase ?? "waiting",
         roomCode: joinedRoom.roomId,
         playersConnected: players.length,
+        countdownRemainingMs: state?.countdownRemainingMs ?? 0,
         ownName: current.ownName === "You" ? "Player" : current.ownName,
       }));
 
@@ -237,6 +205,7 @@ export function MatchRoomProvider({ children }: { children: ReactNode }) {
       phase: state.phase,
       roomCode: joinedRoom.roomId,
       playersConnected: players.length,
+      countdownRemainingMs: state.countdownRemainingMs,
       opponentScore: opponent?.score ?? 0,
       opponentName: opponent?.displayName ?? "Rival",
       opponents: opponents.map((remotePlayer): MatchOpponent => ({
@@ -468,45 +437,32 @@ export function MatchRoomProvider({ children }: { children: ReactNode }) {
     });
   }
 
-  const value = useMemo<MatchRoomContextValue>(
-    () => ({
-      game,
-      room,
-      joinCode,
-      setJoinCode,
-      lobbyError,
-      connecting,
-      match,
-      startRequested,
-      createRoom,
-      joinExistingRoom,
-      leaveRoom,
-      startMatch,
-      restartMatch,
-      sendAttack,
-      tryBindSubstrate,
-      tryBindCofactor,
-      clearCompetitiveBlocker,
-      advanceAllostericHold,
-    }),
-    [game, room, joinCode, lobbyError, connecting, match, startRequested],
-  );
+  const value: MatchRoomContextValue = {
+    game,
+    room,
+    joinCode,
+    setJoinCode,
+    lobbyError,
+    connecting,
+    match,
+    startRequested,
+    createRoom,
+    joinExistingRoom,
+    leaveRoom,
+    startMatch,
+    restartMatch,
+    sendAttack,
+    tryBindSubstrate,
+    tryBindCofactor,
+    clearCompetitiveBlocker,
+    advanceAllostericHold,
+  };
 
   return (
     <MatchRoomContext.Provider value={value}>
       {children}
     </MatchRoomContext.Provider>
   );
-}
-
-export function useMatchRoom() {
-  const context = useContext(MatchRoomContext);
-
-  if (!context) {
-    throw new Error("useMatchRoom must be used inside MatchRoomProvider.");
-  }
-
-  return context;
 }
 
 function getOwnPlayer(
@@ -590,6 +546,7 @@ function createEmptyMatch(): MultiplayerSnapshot {
     phase: "lobby",
     roomCode: "",
     playersConnected: 0,
+    countdownRemainingMs: 0,
     opponentScore: 0,
     opponentName: "Rival",
     opponents: [],

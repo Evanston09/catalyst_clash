@@ -11,7 +11,7 @@ export const defaultCanvasSize: CanvasSize = {
   height: 560,
 };
 
-export const matchDurationMs = 120_000;
+export const matchDurationMs = 300_000;
 export const timerTickMs = 250;
 export const allostericHoldTargetMs = 2_000;
 export const cofactorRoundChance = 0.35;

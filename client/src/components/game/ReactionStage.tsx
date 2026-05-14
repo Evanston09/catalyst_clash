@@ -37,6 +37,14 @@ import type {
   MoleculePosition,
 } from "@/lib/gameTypes";
 
+function setStageCursor(target: Konva.Node, cursor: string) {
+  const stage = target.getStage();
+
+  if (stage) {
+    stage.container().style.cursor = cursor;
+  }
+}
+
 export function ReactionStage({
   activeSiteBlocked,
   allostericHoldProgress,
@@ -407,26 +415,12 @@ function CofactorPiece({
       onDragEnd={onDragEnd}
       onDragMove={onDragMove}
       onMouseEnter={(event) => {
-        const stage = event.target.getStage();
-
-        if (stage && draggable) {
-          stage.container().style.cursor = "grab";
+        if (draggable) {
+          setStageCursor(event.target, "grab");
         }
       }}
-      onMouseLeave={(event) => {
-        const stage = event.target.getStage();
-
-        if (stage) {
-          stage.container().style.cursor = "default";
-        }
-      }}
-      onDragStart={(event) => {
-        const stage = event.target.getStage();
-
-        if (stage) {
-          stage.container().style.cursor = "grabbing";
-        }
-      }}
+      onMouseLeave={(event) => setStageCursor(event.target, "default")}
+      onDragStart={(event) => setStageCursor(event.target, "grabbing")}
       opacity={draggable || bound ? 1 : 0.58}
       scaleX={failed ? 1.14 : 1}
       scaleY={failed ? 1.14 : 1}
@@ -523,20 +517,8 @@ function CompetitiveBlockerNode({
       y={blocker.y}
       onClick={onClear}
       onTap={onClear}
-      onMouseEnter={(event) => {
-        const stage = event.target.getStage();
-
-        if (stage) {
-          stage.container().style.cursor = "pointer";
-        }
-      }}
-      onMouseLeave={(event) => {
-        const stage = event.target.getStage();
-
-        if (stage) {
-          stage.container().style.cursor = "default";
-        }
-      }}
+      onMouseEnter={(event) => setStageCursor(event.target, "pointer")}
+      onMouseLeave={(event) => setStageCursor(event.target, "default")}
     >
       {image ? (
         <KonvaImage
@@ -591,21 +573,10 @@ function AllostericLock({
       onMouseUp={() => setHolding(false)}
       onTouchEnd={() => setHolding(false)}
       onTouchStart={() => setHolding(true)}
-      onMouseEnter={(event) => {
-        const stage = event.target.getStage();
-
-        if (stage) {
-          stage.container().style.cursor = "pointer";
-        }
-      }}
+      onMouseEnter={(event) => setStageCursor(event.target, "pointer")}
       onMouseLeave={(event) => {
         setHolding(false);
-
-        const stage = event.target.getStage();
-
-        if (stage) {
-          stage.container().style.cursor = "default";
-        }
+        setStageCursor(event.target, "default");
       }}
     >
       <Circle
@@ -787,19 +758,11 @@ function CanvasMolecule({
       }}
       onDragMove={onDragMove}
       onMouseEnter={(event) => {
-        const stage = event.target.getStage();
-
-        if (stage && draggable) {
-          stage.container().style.cursor = "grab";
+        if (draggable) {
+          setStageCursor(event.target, "grab");
         }
       }}
-      onMouseLeave={(event) => {
-        const stage = event.target.getStage();
-
-        if (stage) {
-          stage.container().style.cursor = "default";
-        }
-      }}
+      onMouseLeave={(event) => setStageCursor(event.target, "default")}
       onDragStart={(event) => {
         isDraggingRef.current = true;
 
@@ -808,11 +771,7 @@ function CanvasMolecule({
           dragReleaseTimeoutRef.current = null;
         }
 
-        const stage = event.target.getStage();
-
-        if (stage) {
-          stage.container().style.cursor = "grabbing";
-        }
+        setStageCursor(event.target, "grabbing");
       }}
       opacity={draggable ? 1 : 0.58}
       scaleX={failed ? 1.08 : 1}
@@ -833,144 +792,6 @@ function CanvasMolecule({
       ) : null}
     </Group>
   );
-}
-
-export function useElementSize(
-  ref: React.RefObject<HTMLElement | null>,
-  fallback: CanvasSize,
-) {
-  const [size, setSize] = useState<CanvasSize>(fallback);
-
-  useEffect(() => {
-    const element = ref.current;
-
-    if (!element) {
-      return;
-    }
-
-    function updateSize() {
-      setSize({
-        width: Math.max(320, Math.round(element?.clientWidth ?? fallback.width)),
-        height: Math.max(260, Math.round(element?.clientHeight ?? fallback.height)),
-      });
-    }
-
-    updateSize();
-
-    const observer = new ResizeObserver(updateSize);
-    observer.observe(element);
-
-    return () => observer.disconnect();
-  }, [fallback, ref]);
-
-  return size;
-}
-
-export function useCanvasTheme() {
-  const [theme, setTheme] = useState<CanvasTheme>(readCanvasTheme);
-
-  useEffect(() => {
-    const updateTheme = () => setTheme(readCanvasTheme());
-    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
-    const rootObserver = new MutationObserver(updateTheme);
-    const bodyObserver = new MutationObserver(updateTheme);
-
-    rootObserver.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ["class", "style"],
-    });
-
-    bodyObserver.observe(document.body, {
-      attributes: true,
-      attributeFilter: ["class", "style"],
-    });
-
-    mediaQuery.addEventListener("change", updateTheme);
-    updateTheme();
-
-    return () => {
-      rootObserver.disconnect();
-      bodyObserver.disconnect();
-      mediaQuery.removeEventListener("change", updateTheme);
-    };
-  }, []);
-
-  return theme;
-}
-
-function readCanvasTheme(): CanvasTheme {
-  const lightTheme: CanvasTheme = {
-    background: "#ffffff",
-    border: "#e4e4e7",
-    card: "#ffffff",
-    destructive: "#dc2626",
-    foreground: "#18181b",
-    muted: "#f4f4f5",
-    mutedForeground: "#71717a",
-    primary: "#2f806e",
-    primaryForeground: "#ecfdf5",
-    isDark: false,
-  };
-  const darkTheme: CanvasTheme = {
-    background: "#18181b",
-    border: "rgba(255,255,255,0.12)",
-    card: "#27272a",
-    destructive: "#f87171",
-    foreground: "#fafafa",
-    muted: "#27272a",
-    mutedForeground: "#a1a1aa",
-    primary: "#2f806e",
-    primaryForeground: "#ecfdf5",
-    isDark: true,
-  };
-
-  if (typeof window === "undefined") {
-    return lightTheme;
-  }
-
-  const root = document.documentElement;
-  const body = document.body;
-  const isDark =
-    root.classList.contains("dark") ||
-    body.classList.contains("dark") ||
-    window.matchMedia("(prefers-color-scheme: dark)").matches;
-  const fallback = isDark ? darkTheme : lightTheme;
-  const styles = getComputedStyle(body);
-
-  return {
-    background: canvasColor(styles, "--background", fallback.background),
-    border: canvasColor(styles, "--border", fallback.border),
-    card: canvasColor(styles, "--card", fallback.card),
-    destructive: canvasColor(styles, "--destructive", fallback.destructive),
-    foreground: canvasColor(styles, "--foreground", fallback.foreground),
-    muted: canvasColor(styles, "--muted", fallback.muted),
-    mutedForeground: canvasColor(
-      styles,
-      "--muted-foreground",
-      fallback.mutedForeground,
-    ),
-    primary: canvasColor(styles, "--primary", fallback.primary),
-    primaryForeground: canvasColor(
-      styles,
-      "--primary-foreground",
-      fallback.primaryForeground,
-    ),
-    isDark,
-  };
-}
-
-function canvasColor(
-  styles: CSSStyleDeclaration,
-  name: string,
-  fallback: string,
-) {
-  const value = styles.getPropertyValue(name).trim();
-
-  if (!value || value.startsWith("oklch(")) {
-    return fallback;
-  }
-
-  return value;
 }
 
 function getAllostericSite(activeSite: ActiveSiteBounds) {
@@ -1022,36 +843,6 @@ function buildHexagonPoints(radius: number) {
 
     return [Math.cos(angle) * radius, Math.sin(angle) * radius];
   }).flat();
-}
-
-export function buildMoleculePositions(
-  molecules: Molecule[],
-  round: number,
-  size: CanvasSize,
-) {
-  const margin = 76;
-  const centerX = size.width * 0.52;
-  const centerY = size.height * 0.52;
-  const zones = [
-    { minX: margin, maxX: centerX - 190, minY: margin, maxY: centerY - 115 },
-    { minX: centerX + 190, maxX: size.width - margin, minY: margin, maxY: centerY - 115 },
-    { minX: margin, maxX: centerX - 190, minY: centerY + 130, maxY: size.height - margin },
-    { minX: centerX + 190, maxX: size.width - margin, minY: centerY + 130, maxY: size.height - margin },
-  ];
-
-  return molecules.map((molecule, index) => {
-    const zone = zones[index % zones.length];
-    const x = randomInRange(`${molecule.id}-x`, round, zone.minX, zone.maxX);
-    const y = randomInRange(`${molecule.id}-y`, round, zone.minY, zone.maxY);
-    const rotation = randomInRange(`${molecule.id}-rotation`, round, 0, 360);
-
-    return {
-      id: molecule.id,
-      x: clamp(x, margin, size.width - margin),
-      y: clamp(y, margin, size.height - margin),
-      rotation,
-    };
-  });
 }
 
 function getActiveSiteBounds(size: CanvasSize, round: number): ActiveSiteBounds {

@@ -28,17 +28,21 @@ export function VictoryPage() {
     return <Navigate to="/game" replace />;
   }
 
-  const isDraw = match.result === "draw";
-  const winnerName =
-    match.result === "win"
-      ? match.ownName
-      : match.result === "loss"
-        ? match.opponentName
-        : "Draw";
-  const headline = isDraw ? "Draw" : `${winnerName} Wins`;
-  const summary = isDraw
-    ? `Both players finished with ${game.productCount} products.`
-    : `${match.ownName}: ${game.productCount} | ${match.opponentName}: ${match.opponentScore}`;
+  const players = [
+    {
+      sessionId: "own",
+      displayName: match.ownName,
+      score: game.productCount,
+    },
+    ...match.opponents,
+  ];
+  const topScore = Math.max(...players.map((player) => player.score));
+  const topPlayers = players.filter((player) => player.score === topScore);
+  const isDraw = topPlayers.length > 1;
+  const headline = isDraw ? "Draw" : `${topPlayers[0].displayName} Wins`;
+  const summary = players
+    .map((player) => `${player.displayName}: ${player.score}`)
+    .join(" | ");
 
   return (
     <main className="min-h-svh bg-background text-foreground">
@@ -64,35 +68,28 @@ export function VictoryPage() {
             <CardDescription>{summary}</CardDescription>
           </CardHeader>
           <CardContent className="grid gap-4">
-            <div className="grid grid-cols-2 gap-3">
-              <div
-                className={
-                  match.result === "win"
-                    ? "grid gap-1 rounded-lg border border-yellow-500/70 bg-yellow-500/15 p-4"
-                    : "grid gap-1 rounded-lg border bg-muted/60 p-4"
-                }
-              >
-                <span className="text-xs font-extrabold uppercase text-muted-foreground">
-                  {match.ownName}
-                </span>
-                <strong className="text-4xl font-black leading-none">
-                  {game.productCount}
-                </strong>
-              </div>
-              <div
-                className={
-                  match.result === "loss"
-                    ? "grid gap-1 rounded-lg border border-yellow-500/70 bg-yellow-500/15 p-4"
-                    : "grid gap-1 rounded-lg border bg-muted/60 p-4"
-                }
-              >
-                <span className="text-xs font-extrabold uppercase text-muted-foreground">
-                  {match.opponentName}
-                </span>
-                <strong className="text-4xl font-black leading-none">
-                  {match.opponentScore}
-                </strong>
-              </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {players.map((player) => {
+                const isWinner = player.score === topScore;
+
+                return (
+                  <div
+                    key={player.sessionId}
+                    className={
+                      isWinner
+                        ? "grid gap-1 rounded-lg border border-yellow-500/70 bg-yellow-500/15 p-4"
+                        : "grid gap-1 rounded-lg border bg-muted/60 p-4"
+                    }
+                  >
+                    <span className="text-xs font-extrabold uppercase text-muted-foreground">
+                      {player.displayName}
+                    </span>
+                    <strong className="text-4xl font-black leading-none">
+                      {player.score}
+                    </strong>
+                  </div>
+                );
+              })}
             </div>
             <div className="grid grid-cols-2 gap-3">
               <Button type="button" size="lg" onClick={restartMatch}>

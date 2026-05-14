@@ -97,6 +97,7 @@ export type MultiplayerSnapshot = {
   phase: MatchPhase;
   roomCode: string;
   playersConnected: number;
+  countdownRemainingMs: number;
   opponentScore: number;
   opponentName: string;
   opponents: MatchOpponent[];

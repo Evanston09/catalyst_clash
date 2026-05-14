@@ -15,7 +15,7 @@ export type RoundSpec = {
   cofactorRequired: boolean;
 };
 
-export const matchDurationMs = 120_000;
+export const matchDurationMs = 300_000;
 export const timerTickMs = 250;
 export const competitiveBlockerCount = 10;
 export const allostericHoldTargetMs = 2_000;

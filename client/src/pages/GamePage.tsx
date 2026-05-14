@@ -1,13 +1,13 @@
 import { useMemo, useRef, useState } from "react";
 import { Navigate } from "react-router";
-import { LockIcon, RotateCcwIcon, SwordsIcon } from "lucide-react";
+import { LockIcon, SwordsIcon } from "lucide-react";
 
+import { ReactionStage } from "@/components/game/ReactionStage";
 import {
   buildMoleculePositions,
-  ReactionStage,
   useCanvasTheme,
   useElementSize,
-} from "@/components/game/ReactionStage";
+} from "@/components/game/reactionStageUtils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -21,12 +21,17 @@ import {
   getBlockingReason,
 } from "@/lib/gameRules";
 
+function formatCountdown(countdownRemainingMs: number) {
+  const secondsRemaining = Math.ceil(countdownRemainingMs / 1_000);
+
+  return secondsRemaining > 0 ? secondsRemaining.toString() : "Go!";
+}
+
 export function GamePage() {
   const {
     advanceAllostericHold,
     clearCompetitiveBlocker,
     game,
-    leaveRoom,
     match,
     room,
     sendAttack,
@@ -126,8 +131,13 @@ export function GamePage() {
           </Card>
           <div className="status-strip">
             <Badge variant="outline">Room {match.roomCode}</Badge>
-            {match.phase === "waiting" || match.phase === "countdown" ? (
+            {match.phase === "waiting" ? (
               <Badge variant="secondary">Starting</Badge>
+            ) : null}
+            {match.phase === "countdown" ? (
+              <Badge variant="secondary">
+                {formatCountdown(match.countdownRemainingMs)}
+              </Badge>
             ) : null}
             {blockingReason ? (
               <Badge variant="secondary">
@@ -173,17 +183,6 @@ export function GamePage() {
               </Button>
             </CardContent>
           </Card>
-          <div className="utility-actions">
-            <Button
-              type="button"
-              size="icon-sm"
-              variant="ghost"
-              aria-label="Leave to lobby"
-              onClick={leaveRoom}
-            >
-              <RotateCcwIcon />
-            </Button>
-          </div>
         </div>
       </section>
       {showTargetPopup ? (

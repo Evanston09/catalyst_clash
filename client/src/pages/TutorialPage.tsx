@@ -9,12 +9,12 @@ import {
   SwordsIcon,
 } from "lucide-react";
 
+import { ReactionStage } from "@/components/game/ReactionStage";
 import {
   buildMoleculePositions,
-  ReactionStage,
   useCanvasTheme,
   useElementSize,
-} from "@/components/game/ReactionStage";
+} from "@/components/game/reactionStageUtils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -48,31 +48,31 @@ const tutorialSteps: TutorialStep[] = [
     title: "Bind a cofactor",
     instruction: "Drag the cofactor into the hexagonal cofactor site.",
     detail:
-      "Some enzymes need a non-protein helper molecule. The cofactor changes the enzyme into an active form so catalysis can happen. Cofactors can be inorganic molecules (Zn2+, Cu2+, or Mg2+) or organic molecules (NAD+, FAD, and Coenzyme A). These are necessary for the enzyme’s biological activity."
+      "Some enzymes need a helper molecule. Cofactors such as Zn2+, Mg2+, NAD+, or FAD help the enzyme reach an active form for catalysis.",
   },
   {
     title: "Clear competitive inhibition",
     instruction: "Click or tap each blocker sitting on the field.",
     detail:
-      "Competitive inhibitors resemble substrates and compete for the active site, reducing how often the real substrate can bind. You can reverse this type of inhibition by increasing the substrate concentration. This will basically “knock out” the competitive inhibitor.",
+      "Competitive inhibitors resemble substrates and compete for the active site. Increasing substrate concentration can reduce their effect.",
   },
   {
     title: "Clear noncompetitive inhibition",
     instruction: "Press and hold the lock until the ring fills.",
     detail:
-      "Noncompetitive inhibitors bind away from the active site and change enzyme shape, lowering activity even when substrate is present. Specifically, they bind to the allosteric site, which in turn changes the active site, not allowing substrates to bind anymore.",
+      "Noncompetitive inhibitors bind at an allosteric site, changing the enzyme shape so substrate binding is less effective.",
   },
   {
     title: "Spend energy",
     instruction: "Press either attack button to finish the tutorial.",
     detail:
-      "Making a product represents the successful binding of the enzyme and substrate. In the game, that success becomes energy you can spend on competitive/noncompetitive inhibitors to  inhibit your rival.",
+      "Each product gives you energy to spend on competitive or noncompetitive inhibitors against a rival.",
   },
   {
     title: "Ready for a match",
-    instruction: "Score, Clear inhibition, and Attack!",
+    instruction: "Score, clear inhibition, and attack.",
     detail:
-      "Through this game, you have practiced and understood enzyme specificity, cofactors, competitive inhibition, and noncompetitive inhibition.",
+      "You have practiced enzyme specificity, cofactors, competitive inhibition, and noncompetitive inhibition.",
   },
 ];
 

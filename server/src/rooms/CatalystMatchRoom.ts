@@ -18,6 +18,12 @@ const roomLetters = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const roomCodeChannel = "$catalyst_match_codes";
 const countdownDurationMs = 3_000;
 
+function formatCountdownStatus(countdownRemainingMs: number) {
+  const secondsRemaining = Math.ceil(countdownRemainingMs / 1_000);
+
+  return secondsRemaining > 0 ? `${secondsRemaining}` : "Go!";
+}
+
 type BindSubstratePayload = {
   substrateId?: unknown;
   inActiveSite?: unknown;
@@ -100,11 +106,11 @@ export class CatalystMatchRoom extends Room {
     this.state.players.set(client.sessionId, player);
 
     if (this.state.players.size >= 2) {
-      this.lock();
-      this.state.statusMessage = "Players joined. Press Start when ready.";
-      this.state.players.forEach((joinedPlayer) => {
-        joinedPlayer.statusMessage = "Players joined. Press Start when ready.";
-      });
+      if (this.state.players.size >= this.maxClients) {
+        this.lock();
+      }
+
+      this.setStatusForAllPlayers("Players joined. Press Start when ready.");
       return;
     }
 
@@ -150,13 +156,10 @@ export class CatalystMatchRoom extends Room {
 
   private startCountdown() {
     this.clearTimers();
+    this.lock();
     this.state.phase = "countdown";
     this.state.countdownRemainingMs = countdownDurationMs;
-    this.state.statusMessage = "Match starts soon.";
-
-    this.state.players.forEach((player) => {
-      player.statusMessage = "Match starts soon.";
-    });
+    this.setStatusForAllPlayers(formatCountdownStatus(this.state.countdownRemainingMs));
 
     this.countdownInterval = setInterval(() => {
       this.state.countdownRemainingMs = Math.max(
@@ -166,7 +169,12 @@ export class CatalystMatchRoom extends Room {
 
       if (this.state.countdownRemainingMs === 0) {
         this.startMatch();
+        return;
       }
+
+      this.setStatusForAllPlayers(
+        formatCountdownStatus(this.state.countdownRemainingMs),
+      );
     }, timerTickMs);
   }
 
@@ -178,11 +186,7 @@ export class CatalystMatchRoom extends Room {
 
     this.state.phase = "running";
     this.state.timeRemainingMs = matchDurationMs;
-    this.state.statusMessage = "Go. Make as many products as possible.";
-
-    this.state.players.forEach((player) => {
-      player.statusMessage = "Go. Make as many products as possible.";
-    });
+    this.setStatusForAllPlayers("Go! Make as many products as possible.");
 
     this.matchInterval = setInterval(() => {
       this.state.timeRemainingMs = Math.max(
@@ -462,17 +466,19 @@ export class CatalystMatchRoom extends Room {
   }
 
   private setCompetitiveBlockers(player: PlayerState) {
-    player.inhibition.competitiveBlockers.splice(
-      0,
-      player.inhibition.competitiveBlockers.length,
-    );
+    this.clearInhibition(player);
     player.inhibition.competitiveBlockers.push(
       ...buildCompetitiveBlockers(player.round).map(
         (blocker) => new CompetitiveBlockerState(blocker),
       ),
     );
-    player.inhibition.allostericActive = false;
-    player.inhibition.allostericHoldMs = 0;
+  }
+
+  private setStatusForAllPlayers(message: string) {
+    this.state.statusMessage = message;
+    this.state.players.forEach((player) => {
+      player.statusMessage = message;
+    });
   }
 
   private clearInhibition(player: PlayerState) {

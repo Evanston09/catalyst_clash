@@ -1,6 +1,6 @@
 import { Navigate, Route, Routes } from "react-router";
 
-import { MatchRoomProvider } from "@/hooks/useMatchRoom";
+import { MatchRoomProvider } from "@/hooks/MatchRoomProvider";
 import { GamePage } from "@/pages/GamePage";
 import { LobbyPage } from "@/pages/LobbyPage";
 import { TutorialPage } from "@/pages/TutorialPage";
