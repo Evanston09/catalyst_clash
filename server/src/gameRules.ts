@@ -21,7 +21,7 @@ export const competitiveBlockerCount = 10;
 export const allostericHoldTargetMs = 2_000;
 export const cofactorRoundChance = 0.35;
 export const attackCosts: Record<AttackKind, number> = {
-  competitive: 5,
+  competitive: 7,
   noncompetitive: 3,
 };
 

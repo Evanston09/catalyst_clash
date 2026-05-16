@@ -19,7 +19,7 @@ export const brownianWanderRadius = 9;
 export const brownianJitterRadius = 2.4;
 
 export const attackCosts = {
-  competitive: 5,
+  competitive: 7,
   noncompetitive: 3,
 };
 

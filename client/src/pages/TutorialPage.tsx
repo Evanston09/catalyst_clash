@@ -306,7 +306,7 @@ export function TutorialPage() {
                 <CardContent className="attack-panel-content">
                   <div className="energy-readout">
                     <span>Energy</span>
-                    <strong>5</strong>
+                    <strong>{attackCosts.competitive}</strong>
                   </div>
                   <Button
                     type="button"

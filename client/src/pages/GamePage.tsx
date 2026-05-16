@@ -179,7 +179,7 @@ export function GamePage() {
               >
                 <SwordsIcon data-icon="inline-start" />
                 Competitive
-                <Badge variant="secondary">5</Badge>
+                <Badge variant="secondary">{attackCosts.competitive}</Badge>
               </Button>
             </CardContent>
           </Card>
