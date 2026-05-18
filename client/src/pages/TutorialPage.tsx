@@ -10,6 +10,7 @@ import {
   ThermometerIcon,
 } from "lucide-react";
 
+import { LandscapePrompt } from "@/components/game/LandscapePrompt";
 import { ReactionStage } from "@/components/game/ReactionStage";
 import {
   buildMoleculePositions,
@@ -301,9 +302,9 @@ export function TutorialPage() {
   }
 
   return (
-    <main className="min-h-svh bg-background text-foreground">
-      <section className="grid h-svh min-h-svh grid-rows-[auto_minmax(0,1fr)] bg-background text-foreground">
-        <header className="flex flex-col gap-3 border-b bg-card/90 p-3 sm:flex-row sm:items-center sm:justify-between sm:p-4">
+    <main className="game-shell bg-background text-foreground">
+      <section className="tutorial-stage grid grid-rows-[auto_minmax(0,1fr)] bg-background text-foreground">
+        <header className="tutorial-header flex flex-col gap-3 border-b bg-card/90 p-3 sm:flex-row sm:items-center sm:justify-between sm:p-4">
           <div className="grid gap-1">
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant="outline">
@@ -330,8 +331,8 @@ export function TutorialPage() {
           </div>
         </header>
 
-        <div className="grid min-h-0 lg:grid-cols-[minmax(0,1fr)_22rem]">
-          <div ref={playfieldRef} className="relative min-h-0">
+        <div className="tutorial-layout grid min-h-0 lg:grid-cols-[minmax(0,1fr)_22rem]">
+          <div ref={playfieldRef} className="tutorial-playfield relative min-h-0">
             <ReactionStage
               activeSiteBlocked={blockingReason === "competitive"}
               allostericHoldProgress={
@@ -391,7 +392,7 @@ export function TutorialPage() {
             ) : null}
           </div>
 
-          <aside className="flex min-h-0 flex-col gap-3 overflow-y-auto border-t bg-card/95 p-3 pb-8 lg:border-l lg:border-t-0 lg:p-4 lg:pb-8">
+          <aside className="tutorial-aside flex min-h-0 flex-col gap-3 overflow-y-auto border-t bg-card/95 p-3 pb-8 lg:border-l lg:border-t-0 lg:p-4 lg:pb-8">
             <Card className="shrink-0" size="sm">
               <CardHeader>
                 <CardTitle className="flex items-center justify-between gap-3">
@@ -454,6 +455,7 @@ export function TutorialPage() {
           </aside>
         </div>
       </section>
+      <LandscapePrompt />
     </main>
   );
 }

@@ -1,7 +1,22 @@
+.game-shell {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100dvh;
+  min-height: 100dvh;
+  overflow: hidden;
+  background: var(--background);
+}
+
+.game-shell > section {
+  height: 100%;
+  min-height: 100%;
+}
+
 .match-stage {
   position: relative;
-  height: 100svh;
-  min-height: 100svh;
+  height: 100%;
+  min-height: 100%;
   overflow: hidden;
   background: var(--background);
 }
@@ -11,10 +26,29 @@
   inset: 0;
   overflow: hidden;
   background: var(--background);
+  touch-action: none;
 }
 
-.reaction-canvas canvas {
+.reaction-canvas canvas,
+.game-shell canvas {
   display: block;
+  touch-action: none;
+  user-select: none;
+}
+
+.landscape-prompt {
+  display: none;
+}
+
+.tutorial-stage {
+  height: 100%;
+  min-height: 100%;
+  overflow: hidden;
+}
+
+.tutorial-layout,
+.tutorial-playfield {
+  overflow: hidden;
 }
 
 .match-hud {
@@ -142,7 +176,8 @@
 
 @media (max-width: 760px) {
   .timer-pill {
-    min-width: 7.5rem;
+    min-width: 6.6rem;
+    padding: 0.25rem 0.75rem;
   }
 
   .score-pill {
@@ -151,29 +186,216 @@
   }
 
   .status-strip {
-    top: calc(max(1rem, env(safe-area-inset-top)) + 4.6rem);
+    top: calc(max(0.55rem, env(safe-area-inset-top)) + 4.4rem);
+    max-width: min(74vw, 34rem);
   }
 
   .match-message {
     top: auto;
-    bottom: calc(max(1rem, env(safe-area-inset-bottom)) + 5.7rem);
-    left: 1rem;
-    max-width: calc(100vw - 2rem);
+    bottom: calc(max(0.55rem, env(safe-area-inset-bottom)) + 4.9rem);
+    left: max(0.75rem, env(safe-area-inset-left));
+    max-width: calc(100vw - 1.5rem - env(safe-area-inset-left) - env(safe-area-inset-right));
     text-align: center;
   }
 
+  .attack-panel {
+    bottom: max(0.5rem, env(safe-area-inset-bottom));
+    width: min(40rem, calc(100vw - 1rem - env(safe-area-inset-left) - env(safe-area-inset-right)));
+  }
+
   .attack-panel-content {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: auto repeat(3, minmax(0, 1fr));
+    gap: 0.45rem;
+    padding: 0.55rem;
+  }
+
+  .attack-panel-content button {
+    min-height: 2.65rem;
+    padding-inline: 0.55rem;
+    font-size: 0.78rem;
   }
 
   .energy-readout {
-    grid-column: 1 / -1;
-    grid-template-columns: auto auto;
-    justify-content: center;
-    align-items: baseline;
+    min-width: 3.6rem;
+  }
+
+  .energy-readout strong {
+    font-size: 1.5rem;
   }
 
   .utility-actions {
     display: none;
+  }
+}
+
+@media (max-height: 430px) and (orientation: landscape) {
+  .tutorial-header {
+    min-height: 0;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.65rem;
+    padding: 0.45rem max(0.65rem, env(safe-area-inset-right)) 0.45rem max(0.65rem, env(safe-area-inset-left));
+  }
+
+  .tutorial-header h1 {
+    font-size: clamp(1.05rem, 4.4vh, 1.35rem);
+  }
+
+  .tutorial-header p {
+    max-width: 58vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.75rem;
+  }
+
+  .tutorial-header .grid.grid-cols-2 {
+    display: flex;
+    flex-shrink: 0;
+  }
+
+  .tutorial-header button,
+  .tutorial-header a {
+    min-height: 2.25rem;
+    padding-inline: 0.65rem;
+    font-size: 0.8rem;
+  }
+
+  .tutorial-layout {
+    grid-template-columns: minmax(0, 1fr) clamp(13.5rem, 30vw, 18rem);
+  }
+
+  .tutorial-aside {
+    border-top: 0;
+    border-left: 1px solid var(--border);
+    gap: 0.45rem;
+    padding: 0.55rem max(0.55rem, env(safe-area-inset-right)) max(0.55rem, env(safe-area-inset-bottom)) 0.55rem;
+  }
+
+  .tutorial-aside [data-slot="card"] {
+    gap: 0.4rem;
+  }
+
+  .tutorial-aside [data-slot="card-header"] {
+    padding: 0.65rem 0.75rem 0;
+  }
+
+  .tutorial-aside [data-slot="card-content"] {
+    gap: 0.45rem;
+    padding: 0.65rem 0.75rem;
+  }
+
+  .tutorial-aside p,
+  .tutorial-aside span {
+    font-size: 0.76rem;
+    line-height: 1.22;
+  }
+
+  .tutorial-aside [data-slot="card-title"] {
+    font-size: 0.9rem;
+  }
+
+  .tutorial-playfield .attack-panel {
+    width: min(32rem, calc(100vw - clamp(13.5rem, 30vw, 18rem) - 1rem - env(safe-area-inset-left)));
+    left: calc((100vw - clamp(13.5rem, 30vw, 18rem)) / 2);
+  }
+
+  .timer-pill,
+  .score-pill {
+    top: max(0.45rem, env(safe-area-inset-top));
+  }
+
+  .timer-pill span {
+    font-size: clamp(1.65rem, 7vh, 2.35rem);
+  }
+
+  .score-pill strong {
+    font-size: clamp(1.35rem, 6vh, 2rem);
+  }
+
+  .status-strip {
+    top: calc(max(0.45rem, env(safe-area-inset-top)) + 3.55rem);
+    gap: 0.25rem;
+  }
+
+  .status-strip .inline-flex,
+  .status-strip [class*="badge"] {
+    font-size: 0.68rem;
+  }
+
+  .match-message {
+    bottom: calc(max(0.45rem, env(safe-area-inset-bottom)) + 4.25rem);
+    font-size: 0.75rem;
+  }
+
+  .attack-panel-content {
+    padding: 0.45rem;
+  }
+
+  .attack-panel-content button {
+    min-width: 0;
+    min-height: 2.4rem;
+    gap: 0.35rem;
+    padding-inline: 0.65rem;
+    font-size: 0.82rem;
+  }
+
+  .attack-panel-content button > svg {
+    display: none;
+  }
+}
+
+@media (orientation: portrait) and (pointer: coarse) {
+  .game-shell > section {
+    visibility: hidden;
+    pointer-events: none;
+  }
+
+  .landscape-prompt {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    display: grid;
+    place-items: center;
+    padding: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
+    background: var(--background);
+    color: var(--foreground);
+    visibility: visible;
+  }
+
+  .landscape-prompt-card {
+    display: grid;
+    max-width: 22rem;
+    justify-items: center;
+    gap: 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xl);
+    background: var(--card);
+    padding: 1.25rem;
+    text-align: center;
+    box-shadow: 0 20px 70px rgb(0 0 0 / 18%);
+  }
+
+  .landscape-prompt-card h2 {
+    margin: 0;
+    font-size: 1.6rem;
+    font-weight: 900;
+    line-height: 1;
+  }
+
+  .landscape-prompt-card p {
+    margin: 0;
+    color: var(--muted-foreground);
+    font-size: 0.95rem;
+    font-weight: 650;
+  }
+
+  .landscape-phone {
+    width: 4.7rem;
+    height: 2.8rem;
+    border: 0.35rem solid var(--primary);
+    border-radius: 0.75rem;
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--primary) 35%, transparent);
   }
 }

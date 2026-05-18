@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import { Navigate } from "react-router";
 import { LockIcon, SwordsIcon, ThermometerIcon } from "lucide-react";
 
+import { LandscapePrompt } from "@/components/game/LandscapePrompt";
 import { ReactionStage } from "@/components/game/ReactionStage";
 import {
   buildMoleculePositions,
@@ -101,7 +102,7 @@ export function GamePage() {
   }
 
   return (
-    <main className="min-h-svh bg-background text-foreground">
+    <main className="game-shell bg-background text-foreground">
       <section className="match-stage" aria-label="Enzyme reaction game">
         <div ref={playfieldRef} className="reaction-canvas">
           <ReactionStage
@@ -207,6 +208,7 @@ export function GamePage() {
           </Card>
         </div>
       </section>
+      <LandscapePrompt />
       {showTargetPopup ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/45 p-4">
           <Card className="w-full max-w-sm" size="sm">
