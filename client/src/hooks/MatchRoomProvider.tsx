@@ -190,6 +190,9 @@ export function MatchRoomProvider({ children }: { children: ReactNode }) {
         roomCode: joinedRoom.roomId,
         playersConnected: players.length,
         countdownRemainingMs: state?.countdownRemainingMs ?? 0,
+        sessionMatchNumber: state?.sessionMatchNumber ?? 1,
+        maxSessionMatches: state?.maxSessionMatches ?? 3,
+        tutorialReadyCount: countTutorialReady(players),
         ownName: current.ownName === "You" ? "Player" : current.ownName,
       }));
 
@@ -206,15 +209,25 @@ export function MatchRoomProvider({ children }: { children: ReactNode }) {
       roomCode: joinedRoom.roomId,
       playersConnected: players.length,
       countdownRemainingMs: state.countdownRemainingMs,
+      sessionMatchNumber: state.sessionMatchNumber,
+      maxSessionMatches: state.maxSessionMatches,
+      tutorialComplete: ownPlayer.tutorialComplete,
+      tutorialReadyCount: countTutorialReady(players),
       opponentScore: opponent?.score ?? 0,
       opponentName: opponent?.displayName ?? "Rival",
       opponents: opponents.map((remotePlayer): MatchOpponent => ({
         sessionId: remotePlayer.sessionId,
         displayName: remotePlayer.displayName,
         score: remotePlayer.score,
+        sessionProducts: remotePlayer.sessionProducts,
+        sessionWins: remotePlayer.sessionWins,
+        tutorialComplete: remotePlayer.tutorialComplete,
       })),
       ownName: ownPlayer?.displayName ?? "You",
+      ownSessionProducts: ownPlayer?.sessionProducts ?? 0,
+      ownSessionWins: ownPlayer?.sessionWins ?? 0,
       attackResource: ownPlayer?.attackResource ?? 0,
+      optimalConditionCharges: ownPlayer?.optimalConditionCharges ?? 0,
       result: ownPlayer?.result ?? "pending",
     });
 
@@ -236,6 +249,14 @@ export function MatchRoomProvider({ children }: { children: ReactNode }) {
     setStartRequested(false);
     room?.send("restartRequest");
     navigate("/waiting");
+  }
+
+  function markTutorialComplete() {
+    room?.send("tutorialComplete");
+  }
+
+  function activateOptimalConditions() {
+    room?.send("activateOptimalConditions");
   }
 
   function startMatch() {
@@ -451,6 +472,8 @@ export function MatchRoomProvider({ children }: { children: ReactNode }) {
     leaveRoom,
     startMatch,
     restartMatch,
+    markTutorialComplete,
+    activateOptimalConditions,
     sendAttack,
     tryBindSubstrate,
     tryBindCofactor,
@@ -529,6 +552,10 @@ function isRemotePlayerState(player: unknown): player is RemotePlayerState {
   );
 }
 
+function countTutorialReady(players: RemotePlayerState[]) {
+  return players.filter((player) => player.tutorialComplete).length;
+}
+
 function createInitialState(): GameState {
   return {
     status: "idle",
@@ -547,11 +574,18 @@ function createEmptyMatch(): MultiplayerSnapshot {
     roomCode: "",
     playersConnected: 0,
     countdownRemainingMs: 0,
+    sessionMatchNumber: 1,
+    maxSessionMatches: 3,
+    tutorialComplete: false,
+    tutorialReadyCount: 0,
     opponentScore: 0,
     opponentName: "Rival",
     opponents: [],
     ownName: "You",
+    ownSessionProducts: 0,
+    ownSessionWins: 0,
     attackResource: 0,
+    optimalConditionCharges: 0,
     result: "pending",
   };
 }
@@ -565,7 +599,7 @@ function mapRemotePlayerToGame(
   const status =
     state.phase === "running"
       ? "running"
-      : state.phase === "ended"
+      : state.phase === "roundComplete" || state.phase === "ended"
         ? "ended"
         : "idle";
   const competitiveBlockers = Array.from(

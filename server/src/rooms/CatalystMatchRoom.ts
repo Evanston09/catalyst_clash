@@ -6,6 +6,9 @@ import {
   buildCompetitiveBlockers,
   buildRoundSpec,
   matchDurationMs,
+  optimalConditionsCharges,
+  optimalConditionsCost,
+  optimalConditionsScoreBonus,
   timerTickMs,
 } from "../gameRules";
 import {
@@ -81,13 +84,29 @@ export class CatalystMatchRoom extends Room {
     this.onMessage("sendAttack", (client, payload: SendAttackPayload) => {
       this.sendAttack(client, payload);
     });
+    this.onMessage("activateOptimalConditions", (client) => {
+      this.activateOptimalConditions(client);
+    });
+    this.onMessage("tutorialComplete", (client) => {
+      this.markTutorialComplete(client);
+    });
     this.onMessage("restartRequest", () => {
+      if (this.state.phase === "roundComplete" && this.clients.length >= 2) {
+        this.prepareNextMatch();
+        return;
+      }
+
       if (this.state.phase === "ended" && this.clients.length >= 2) {
-        this.resetMatch();
+        this.resetSession();
       }
     });
     this.onMessage("startRequest", () => {
       if (this.state.phase === "waiting" && this.state.players.size >= 2) {
+        if (!this.allPlayersTutorialComplete()) {
+          this.setWaitingStatus();
+          return;
+        }
+
         this.startCountdown();
       }
     });
@@ -104,18 +123,13 @@ export class CatalystMatchRoom extends Room {
     player.displayName = sanitizeDisplayName(options?.displayName);
     this.applyRound(player, 1);
     this.state.players.set(client.sessionId, player);
+    this.setWaitingStatus();
 
     if (this.state.players.size >= 2) {
       if (this.state.players.size >= this.maxClients) {
         this.lock();
       }
-
-      this.setStatusForAllPlayers("Players joined. Press Start when ready.");
-      return;
     }
-
-    this.state.statusMessage = `Room ${this.roomId}: waiting for another player.`;
-    player.statusMessage = `Share room code ${this.roomId}.`;
   }
 
   onLeave(client: Client) {
@@ -133,6 +147,9 @@ export class CatalystMatchRoom extends Room {
 
     this.state.players.delete(client.sessionId);
     this.unlock();
+    if (this.state.phase === "waiting") {
+      this.setWaitingStatus();
+    }
   }
 
   async onDispose() {
@@ -178,6 +195,23 @@ export class CatalystMatchRoom extends Room {
     }, timerTickMs);
   }
 
+  private markTutorialComplete(client: Client) {
+    const player = this.getPlayer(client);
+
+    if (!player) {
+      return;
+    }
+
+    player.tutorialComplete = true;
+
+    if (this.state.phase === "waiting") {
+      this.setWaitingStatus();
+      return;
+    }
+
+    player.statusMessage = "Tutorial complete.";
+  }
+
   private startMatch() {
     if (this.countdownInterval) {
       clearInterval(this.countdownInterval);
@@ -186,7 +220,9 @@ export class CatalystMatchRoom extends Room {
 
     this.state.phase = "running";
     this.state.timeRemainingMs = matchDurationMs;
-    this.setStatusForAllPlayers("Go! Make as many products as possible.");
+    this.setStatusForAllPlayers(
+      `Match ${this.state.sessionMatchNumber} of ${this.state.maxSessionMatches}: go!`,
+    );
 
     this.matchInterval = setInterval(() => {
       this.state.timeRemainingMs = Math.max(
@@ -200,21 +236,49 @@ export class CatalystMatchRoom extends Room {
     }, timerTickMs);
   }
 
-  private resetMatch() {
+  private prepareNextMatch() {
     this.clearTimers();
     this.state.phase = "waiting";
     this.state.timeRemainingMs = matchDurationMs;
     this.state.countdownRemainingMs = 0;
     this.state.winnerSessionId = "";
+    this.state.sessionMatchNumber = Math.min(
+      this.state.sessionMatchNumber + 1,
+      this.state.maxSessionMatches,
+    );
 
     this.state.players.forEach((player) => {
-      player.score = 0;
-      player.attackResource = 0;
-      player.result = "pending";
-      player.statusMessage = "Waiting for match start.";
-      this.clearInhibition(player);
-      this.applyRound(player, 1);
+      this.resetPlayerForMatch(player);
     });
+
+    this.setWaitingStatus();
+  }
+
+  private resetSession() {
+    this.clearTimers();
+    this.state.phase = "waiting";
+    this.state.timeRemainingMs = matchDurationMs;
+    this.state.countdownRemainingMs = 0;
+    this.state.winnerSessionId = "";
+    this.state.sessionMatchNumber = 1;
+
+    this.state.players.forEach((player) => {
+      player.sessionProducts = 0;
+      player.sessionWins = 0;
+      this.resetPlayerForMatch(player);
+    });
+
+    this.setWaitingStatus();
+  }
+
+  private resetPlayerForMatch(player: PlayerState) {
+    player.score = 0;
+    player.attackResource = 0;
+    player.optimalConditionCharges = 0;
+    player.result = "pending";
+    player.statusMessage = "Waiting for match start.";
+    this.clearInhibition(player);
+    this.applyRound(player, 1);
   }
 
   private bindSubstrate(client: Client, payload: BindSubstratePayload) {
@@ -256,12 +320,20 @@ export class CatalystMatchRoom extends Room {
       return;
     }
 
-    player.score += 1;
+    const scoreGain =
+      1 +
+      (player.optimalConditionCharges > 0 ? optimalConditionsScoreBonus : 0);
+
+    player.score += scoreGain;
     player.attackResource += 1;
+    player.optimalConditionCharges = Math.max(
+      0,
+      player.optimalConditionCharges - 1,
+    );
     this.applyRound(player, player.round + 1);
     player.statusMessage = player.cofactorRequired
-      ? "Product formed. Cofactor enzyme loaded."
-      : "Product formed. New substrate set loaded.";
+      ? `${scoreGain > 1 ? "Boosted product formed" : "Product formed"}. Cofactor enzyme loaded.`
+      : `${scoreGain > 1 ? "Boosted product formed" : "Product formed"}. New substrate set loaded.`;
   }
 
   private bindCofactor(client: Client, payload: BindCofactorPayload) {
@@ -396,15 +468,42 @@ export class CatalystMatchRoom extends Room {
     opponent.statusMessage = "Incoming noncompetitive inhibition.";
   }
 
+  private activateOptimalConditions(client: Client) {
+    const player = this.getPlayer(client);
+
+    if (!player) {
+      return;
+    }
+
+    if (this.state.phase !== "running") {
+      player.statusMessage = "Wait for the match to start.";
+      return;
+    }
+
+    if (player.optimalConditionCharges > 0) {
+      player.statusMessage = "Optimal Conditions are already active.";
+      return;
+    }
+
+    if (player.attackResource < optimalConditionsCost) {
+      player.statusMessage = `Need ${optimalConditionsCost} energy.`;
+      return;
+    }
+
+    player.attackResource -= optimalConditionsCost;
+    player.optimalConditionCharges = optimalConditionsCharges;
+    player.statusMessage = `Optimal pH and temperature set. Next ${optimalConditionsCharges} products score double.`;
+  }
+
   private endMatch(disconnectedSessionId?: string) {
     this.clearTimers();
-    this.state.phase = "ended";
     this.state.countdownRemainingMs = 0;
     this.unlock();
 
     const players = Array.from(this.state.players.values());
 
-    if (players.length < 2) {
+    if (disconnectedSessionId || players.length < 2) {
+      this.state.phase = "ended";
       const remainingPlayer = players.find(
         (player) => player.sessionId !== disconnectedSessionId,
       );
@@ -415,12 +514,16 @@ export class CatalystMatchRoom extends Room {
         this.state.winnerSessionId = remainingPlayer.sessionId;
       }
 
-      this.state.statusMessage = "Match ended.";
+      this.state.statusMessage = "Session ended.";
       return;
     }
 
     const topScore = Math.max(...players.map((player) => player.score));
     const winners = players.filter((player) => player.score === topScore);
+
+    players.forEach((player) => {
+      player.sessionProducts += player.score;
+    });
 
     if (winners.length > 1) {
       players.forEach((player) => {
@@ -434,24 +537,33 @@ export class CatalystMatchRoom extends Room {
         player.statusMessage = `You lose. Top score was ${topScore}.`;
       });
       this.state.winnerSessionId = "";
-      this.state.statusMessage = "Draw.";
+      this.state.statusMessage = `Match ${this.state.sessionMatchNumber} ended in a draw.`;
+    } else {
+      const winner = winners[0];
+
+      winner.sessionWins += 1;
+
+      players.forEach((player) => {
+        if (player.sessionId === winner.sessionId) {
+          player.result = "win";
+          player.statusMessage = `You win match ${this.state.sessionMatchNumber} with ${winner.score}.`;
+          return;
+        }
+
+        player.result = "loss";
+        player.statusMessage = `You lose match ${this.state.sessionMatchNumber}. Winner scored ${winner.score}.`;
+      });
+      this.state.winnerSessionId = winner.sessionId;
+      this.state.statusMessage = `Match ${this.state.sessionMatchNumber} ended.`;
+    }
+
+    if (this.state.sessionMatchNumber < this.state.maxSessionMatches) {
+      this.state.phase = "roundComplete";
       return;
     }
 
-    const winner = winners[0];
-
-    players.forEach((player) => {
-      if (player.sessionId === winner.sessionId) {
-        player.result = "win";
-        player.statusMessage = `You win with ${winner.score}.`;
-        return;
-      }
-
-      player.result = "loss";
-      player.statusMessage = `You lose. Winner scored ${winner.score}.`;
-    });
-    this.state.winnerSessionId = winner.sessionId;
-    this.state.statusMessage = "Match ended.";
+    this.state.phase = "ended";
+    this.applyFinalSessionResults(players);
   }
 
   private applyRound(player: PlayerState, round: number) {
@@ -479,6 +591,84 @@ export class CatalystMatchRoom extends Room {
     this.state.players.forEach((player) => {
       player.statusMessage = message;
     });
+  }
+
+  private setWaitingStatus() {
+    const playerCount = this.state.players.size;
+    const readyCount = this.tutorialReadyCount();
+
+    if (playerCount < 2) {
+      this.state.statusMessage = `Room ${this.roomId}: waiting for another player.`;
+    } else if (readyCount < playerCount) {
+      this.state.statusMessage = `${readyCount}/${playerCount} players tutorial-ready.`;
+    } else {
+      this.state.statusMessage = `All players ready for match ${this.state.sessionMatchNumber} of ${this.state.maxSessionMatches}.`;
+    }
+
+    this.state.players.forEach((player) => {
+      if (!player.tutorialComplete) {
+        player.statusMessage = "Complete the tutorial before the match can start.";
+        return;
+      }
+
+      player.statusMessage =
+        playerCount < 2
+          ? `Share room code ${this.roomId}.`
+          : this.state.statusMessage;
+    });
+  }
+
+  private tutorialReadyCount() {
+    return Array.from(this.state.players.values()).filter(
+      (player) => player.tutorialComplete,
+    ).length;
+  }
+
+  private allPlayersTutorialComplete() {
+    return (
+      this.state.players.size >= 2 &&
+      this.tutorialReadyCount() === this.state.players.size
+    );
+  }
+
+  private applyFinalSessionResults(players: PlayerState[]) {
+    const topWins = Math.max(...players.map((player) => player.sessionWins));
+    const winLeaders = players.filter((player) => player.sessionWins === topWins);
+    const topProducts = Math.max(
+      ...winLeaders.map((player) => player.sessionProducts),
+    );
+    const winners = winLeaders.filter(
+      (player) => player.sessionProducts === topProducts,
+    );
+
+    if (winners.length > 1) {
+      players.forEach((player) => {
+        const tiedForFirst = winners.includes(player);
+
+        player.result = tiedForFirst ? "draw" : "loss";
+        player.statusMessage = tiedForFirst
+          ? `Session draw: ${player.sessionWins} wins, ${player.sessionProducts} products.`
+          : `Session over. Top total was ${topWins} wins and ${topProducts} products.`;
+      });
+      this.state.winnerSessionId = "";
+      this.state.statusMessage = "Session draw.";
+      return;
+    }
+
+    const winner = winners[0];
+
+    players.forEach((player) => {
+      if (player.sessionId === winner.sessionId) {
+        player.result = "win";
+        player.statusMessage = `Session win: ${winner.sessionWins} wins, ${winner.sessionProducts} products.`;
+        return;
+      }
+
+      player.result = "loss";
+      player.statusMessage = `Session loss. Winner had ${winner.sessionWins} wins and ${winner.sessionProducts} products.`;
+    });
+    this.state.winnerSessionId = winner.sessionId;
+    this.state.statusMessage = "Session ended.";
   }
 
   private clearInhibition(player: PlayerState) {

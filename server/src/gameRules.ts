@@ -24,6 +24,9 @@ export const attackCosts: Record<AttackKind, number> = {
   competitive: 7,
   noncompetitive: 3,
 };
+export const optimalConditionsCost = 6;
+export const optimalConditionsCharges = 5;
+export const optimalConditionsScoreBonus = 1;
 
 const normalSetIds = Array.from({ length: 24 }, (_, index) =>
   String(index + 1),

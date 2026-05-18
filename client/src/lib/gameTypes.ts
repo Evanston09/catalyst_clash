@@ -53,7 +53,13 @@ export type GameState = {
   molecules: Molecule[];
 };
 
-export type MatchPhase = "lobby" | "waiting" | "countdown" | "running" | "ended";
+export type MatchPhase =
+  | "lobby"
+  | "waiting"
+  | "countdown"
+  | "running"
+  | "roundComplete"
+  | "ended";
 
 export type RemoteCompetitiveBlocker = {
   id: string;
@@ -66,12 +72,16 @@ export type RemotePlayerState = {
   sessionId: string;
   displayName: string;
   score: number;
+  sessionProducts: number;
+  sessionWins: number;
   attackResource: number;
+  optimalConditionCharges: number;
   round: number;
   cofactorRequired: boolean;
   cofactorBound: boolean;
   statusMessage: string;
   result: "pending" | "win" | "loss" | "draw" | "disconnect";
+  tutorialComplete: boolean;
   inhibition: {
     competitiveBlockers: Iterable<RemoteCompetitiveBlocker>;
     allostericActive: boolean;
@@ -83,12 +93,17 @@ export type MatchOpponent = {
   sessionId: string;
   displayName: string;
   score: number;
+  sessionProducts: number;
+  sessionWins: number;
+  tutorialComplete: boolean;
 };
 
 export type RemoteMatchState = {
   phase: Exclude<MatchPhase, "lobby">;
   timeRemainingMs: number;
   countdownRemainingMs: number;
+  sessionMatchNumber: number;
+  maxSessionMatches: number;
   statusMessage: string;
   players?: unknown;
 };
@@ -98,11 +113,18 @@ export type MultiplayerSnapshot = {
   roomCode: string;
   playersConnected: number;
   countdownRemainingMs: number;
+  sessionMatchNumber: number;
+  maxSessionMatches: number;
+  tutorialComplete: boolean;
+  tutorialReadyCount: number;
   opponentScore: number;
   opponentName: string;
   opponents: MatchOpponent[];
   ownName: string;
+  ownSessionProducts: number;
+  ownSessionWins: number;
   attackResource: number;
+  optimalConditionCharges: number;
   result: RemotePlayerState["result"];
 };
 

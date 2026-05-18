@@ -22,6 +22,9 @@ export const attackCosts = {
   competitive: 7,
   noncompetitive: 3,
 };
+export const optimalConditionsCost = 6;
+export const optimalConditionsCharges = 5;
+export const optimalConditionsScoreBonus = 1;
 
 export function createEmptyInhibitionState(): InhibitionState {
   return {

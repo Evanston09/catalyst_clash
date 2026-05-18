@@ -7,6 +7,7 @@ import {
   LockIcon,
   RotateCcwIcon,
   SwordsIcon,
+  ThermometerIcon,
 } from "lucide-react";
 
 import { ReactionStage } from "@/components/game/ReactionStage";
@@ -28,6 +29,7 @@ import {
   defaultCanvasSize,
   getBlockingReason,
   matchDurationMs,
+  optimalConditionsCost,
 } from "@/lib/gameRules";
 import type { GameState } from "@/lib/gameTypes";
 
@@ -35,6 +37,13 @@ type TutorialStep = {
   title: string;
   instruction: string;
   detail: string;
+};
+
+type ScienceRecap = {
+  title: string;
+  label: string;
+  detail: string;
+  icon: typeof LockIcon;
 };
 
 const tutorialSteps: TutorialStep[] = [
@@ -64,24 +73,49 @@ const tutorialSteps: TutorialStep[] = [
   },
   {
     title: "Spend energy",
-    instruction: "Press either attack button to finish the tutorial.",
+    instruction: "Press an energy button to finish the tutorial.",
     detail:
-      "Each product gives you energy to spend on competitive or noncompetitive inhibitors against a rival.",
+      "Each product gives you energy to spend on inhibitors against a rival or Optimal Conditions for your own enzyme.",
   },
   {
     title: "Ready for a match",
-    instruction: "Score, clear inhibition, and attack.",
+    instruction: "Use energy to attack rivals or boost your own enzyme.",
     detail:
-      "You have practiced enzyme specificity, cofactors, competitive inhibition, and noncompetitive inhibition.",
+      "Competitive and noncompetitive inhibition slow opponents, while optimal pH and temperature can speed up your own reactions.",
+  },
+];
+
+const scienceRecaps: ScienceRecap[] = [
+  {
+    title: "Competitive inhibition",
+    label: "Active site",
+    detail:
+      "A substrate-shaped inhibitor competes for the active site. In the match, this sends blockers that the rival has to clear before catalysis can continue.",
+    icon: SwordsIcon,
+  },
+  {
+    title: "Noncompetitive inhibition",
+    label: "Allosteric site",
+    detail:
+      "An inhibitor binds away from the active site and changes the enzyme shape. In the match, this creates a lock that has to be held until the enzyme works again.",
+    icon: LockIcon,
+  },
+  {
+    title: "Optimal Conditions",
+    label: "pH + temp",
+    detail:
+      "Enzymes work fastest near their ideal pH and temperature. Spending energy on this boost helps your own enzyme make products more efficiently.",
+    icon: ThermometerIcon,
   },
 ];
 
 const cofactorTutorialRound = findCofactorTutorialRound();
 
 export function TutorialPage() {
-  const { match, room } = useMatchRoom();
+  const { markTutorialComplete, match, room } = useMatchRoom();
   const [stepIndex, setStepIndex] = useState(0);
   const [game, setGame] = useState(createTutorialGame);
+  const completionSentRef = useRef(false);
   const playfieldRef = useRef<HTMLDivElement>(null);
   const canvasSize = useElementSize(playfieldRef, defaultCanvasSize);
   const theme = useCanvasTheme();
@@ -100,6 +134,15 @@ export function TutorialPage() {
   );
   const step = tutorialSteps[stepIndex];
   const completed = stepIndex === tutorialSteps.length - 1;
+
+  useEffect(() => {
+    if (!completed || !room || completionSentRef.current) {
+      return;
+    }
+
+    completionSentRef.current = true;
+    markTutorialComplete();
+  }, [completed, markTutorialComplete, room]);
 
   useEffect(() => {
     if (!game.failedSubstrateId) {
@@ -132,7 +175,7 @@ export function TutorialPage() {
     return <Navigate to="/game" replace />;
   }
 
-  if (room && match.phase === "ended") {
+  if (room && (match.phase === "roundComplete" || match.phase === "ended")) {
     return <Navigate to="/victory" replace />;
   }
 
@@ -240,15 +283,20 @@ export function TutorialPage() {
     advanceStep(nextGame);
   }
 
-  function completeAttack(kind: "competitive" | "noncompetitive") {
+  function completeAttack(kind: "competitive" | "noncompetitive" | "optimal") {
     if (stepIndex !== 4) {
       return;
     }
 
-    const label = kind === "competitive" ? "Competitive" : "Noncompetitive";
+    const label =
+      kind === "competitive"
+        ? "Competitive"
+        : kind === "noncompetitive"
+          ? "Noncompetitive"
+          : "Optimal Conditions";
     advanceStep({
       ...game,
-      statusMessage: `${label} attack sent. You are ready for a real match.`,
+      statusMessage: `${label} used. You are ready for a real match.`,
     });
   }
 
@@ -328,13 +376,23 @@ export function TutorialPage() {
                     Competitive
                     <Badge variant="secondary">{attackCosts.competitive}</Badge>
                   </Button>
+                  <Button
+                    type="button"
+                    size="lg"
+                    variant="outline"
+                    onClick={() => completeAttack("optimal")}
+                  >
+                    <ThermometerIcon data-icon="inline-start" />
+                    Optimal
+                    <Badge variant="secondary">{optimalConditionsCost}</Badge>
+                  </Button>
                 </CardContent>
               </Card>
             ) : null}
           </div>
 
-          <aside className="grid min-h-0 gap-3 overflow-auto border-t bg-card/95 p-3 lg:border-l lg:border-t-0 lg:p-4">
-            <Card size="sm">
+          <aside className="flex min-h-0 flex-col gap-3 overflow-y-auto border-t bg-card/95 p-3 pb-8 lg:border-l lg:border-t-0 lg:p-4 lg:pb-8">
+            <Card className="shrink-0" size="sm">
               <CardHeader>
                 <CardTitle className="flex items-center justify-between gap-3">
                   <span className="font-bold">Current Goal</span>
@@ -350,13 +408,49 @@ export function TutorialPage() {
             </Card>
 
             {completed ? (
-              <Button asChild size="lg">
+              <Card className="shrink-0" size="sm">
+                <CardHeader>
+                  <CardTitle className="font-bold">Biology Recap</CardTitle>
+                </CardHeader>
+                <CardContent className="flex flex-col gap-3">
+                  {scienceRecaps.map((recap) => {
+                    const Icon = recap.icon;
+
+                    return (
+                      <div
+                        key={recap.title}
+                        className="grid grid-cols-[auto_minmax(0,1fr)] gap-3 rounded-lg border bg-background p-3"
+                      >
+                        <div className="grid size-9 place-items-center rounded-full bg-primary/10 text-primary">
+                          <Icon className="size-4" aria-hidden="true" />
+                        </div>
+                        <div className="grid gap-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <strong className="text-sm leading-tight">
+                              {recap.title}
+                            </strong>
+                            <Badge variant="outline">{recap.label}</Badge>
+                          </div>
+                          <p className="m-0 text-sm text-muted-foreground">
+                            {recap.detail}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </CardContent>
+              </Card>
+            ) : null}
+
+            {completed ? (
+              <Button asChild className="shrink-0" size="lg">
                 <Link to={room ? "/waiting" : "/lobby"}>
                   {room ? "Return to Waiting Room" : "Return to Lobby"}
                   <ArrowRightIcon data-icon="inline-end" />
                 </Link>
               </Button>
             ) : null}
+            <div className="h-2 shrink-0" aria-hidden="true" />
           </aside>
         </div>
       </section>

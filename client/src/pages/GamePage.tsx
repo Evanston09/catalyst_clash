@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import { Navigate } from "react-router";
-import { LockIcon, SwordsIcon } from "lucide-react";
+import { LockIcon, SwordsIcon, ThermometerIcon } from "lucide-react";
 
 import { ReactionStage } from "@/components/game/ReactionStage";
 import {
@@ -19,6 +19,7 @@ import {
   defaultCanvasSize,
   formatTime,
   getBlockingReason,
+  optimalConditionsCost,
 } from "@/lib/gameRules";
 
 function formatCountdown(countdownRemainingMs: number) {
@@ -30,6 +31,7 @@ function formatCountdown(countdownRemainingMs: number) {
 export function GamePage() {
   const {
     advanceAllostericHold,
+    activateOptimalConditions,
     clearCompetitiveBlocker,
     game,
     match,
@@ -62,6 +64,10 @@ export function GamePage() {
     game.status === "running" && match.attackResource >= attackCosts.noncompetitive;
   const canSendCompetitive =
     game.status === "running" && match.attackResource >= attackCosts.competitive;
+  const canActivateOptimalConditions =
+    game.status === "running" &&
+    match.attackResource >= optimalConditionsCost &&
+    match.optimalConditionCharges === 0;
   const showTargetPopup = pendingAttackKind !== null && match.playersConnected > 2;
 
   function requestAttack(kind: "competitive" | "noncompetitive") {
@@ -90,7 +96,7 @@ export function GamePage() {
     return <Navigate to="/waiting" replace />;
   }
 
-  if (match.phase === "ended") {
+  if (match.phase === "roundComplete" || match.phase === "ended") {
     return <Navigate to="/victory" replace />;
   }
 
@@ -151,6 +157,11 @@ export function GamePage() {
                 {game.cofactor.bound ? "Cofactor bound" : "Cofactor needed"}
               </Badge>
             ) : null}
+            {match.optimalConditionCharges > 0 ? (
+              <Badge variant="secondary">
+                Optimal pH + Temp: {match.optimalConditionCharges} left
+              </Badge>
+            ) : null}
           </div>
           <div className="match-message">{game.statusMessage}</div>
           <Card className="attack-panel" size="sm">
@@ -180,6 +191,17 @@ export function GamePage() {
                 <SwordsIcon data-icon="inline-start" />
                 Competitive
                 <Badge variant="secondary">{attackCosts.competitive}</Badge>
+              </Button>
+              <Button
+                type="button"
+                size="lg"
+                variant="outline"
+                disabled={!canActivateOptimalConditions}
+                onClick={activateOptimalConditions}
+              >
+                <ThermometerIcon data-icon="inline-start" />
+                Optimal
+                <Badge variant="secondary">{optimalConditionsCost}</Badge>
               </Button>
             </CardContent>
           </Card>

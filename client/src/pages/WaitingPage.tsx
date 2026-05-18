@@ -16,7 +16,10 @@ export function WaitingPage() {
   const { leaveRoom, match, room, startMatch } = useMatchRoom();
   const [starting, setStarting] = useState(false);
   const [copied, setCopied] = useState(false);
-  const canStartMatch = match.phase === "waiting" && match.playersConnected >= 2;
+  const canStartMatch =
+    match.phase === "waiting" &&
+    match.playersConnected >= 2 &&
+    match.tutorialReadyCount === match.playersConnected;
   const startButtonActive = starting || match.phase === "countdown";
 
   function handleStartMatch() {
@@ -50,7 +53,7 @@ export function WaitingPage() {
     return <Navigate to="/game" replace />;
   }
 
-  if (match.phase === "ended") {
+  if (match.phase === "roundComplete" || match.phase === "ended") {
     return <Navigate to="/victory" replace />;
   }
 
@@ -75,7 +78,7 @@ export function WaitingPage() {
               </Button>
             </div>
             <CardDescription>
-              Share the room code, then start once at least two players are here.
+              Share the room code, finish the tutorial, then start the match.
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-4">
@@ -87,6 +90,17 @@ export function WaitingPage() {
               <span className="text-xs font-extrabold uppercase text-muted-foreground">
                 players joined
               </span>
+            </div>
+            <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-2.5 rounded-lg border bg-muted/60 p-4">
+              <BookOpenIcon className="size-5 text-muted-foreground" aria-hidden="true" />
+              <div className="grid gap-1">
+                <strong className="text-sm font-black uppercase leading-none">
+                  Tutorial {match.tutorialReadyCount}/{match.playersConnected} ready
+                </strong>
+                <span className="text-xs font-semibold text-muted-foreground">
+                  Match {match.sessionMatchNumber} of {match.maxSessionMatches}
+                </span>
+              </div>
             </div>
             <div className="rounded-lg border bg-background p-4">
               <p className="m-0 text-xs font-bold uppercase tracking-wide text-muted-foreground">
@@ -126,7 +140,11 @@ export function WaitingPage() {
                 {startButtonActive ? "Starting..." : "Start"}
               </Button>
             </div>
-            {startButtonActive ? (
+            {!match.tutorialComplete ? (
+              <p className="m-0 text-center text-sm font-semibold text-muted-foreground">
+                Complete How to Play before this room can start.
+              </p>
+            ) : startButtonActive ? (
               <p className="m-0 text-center text-sm font-semibold text-muted-foreground">
                 Match is starting.
               </p>

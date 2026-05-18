@@ -21,6 +21,8 @@ export type MatchRoomContextValue = {
   leaveRoom: () => void;
   startMatch: () => void;
   restartMatch: () => void;
+  markTutorialComplete: () => void;
+  activateOptimalConditions: () => void;
   sendAttack: (
     kind: "competitive" | "noncompetitive",
     targetSessionId?: string,
